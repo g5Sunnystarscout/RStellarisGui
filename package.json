@@ -1,0 +1,62 @@
+{
+  "name": "rstellarisgui",
+  "version": "0.1.0",
+  "description": "Stellaris GUI generator: layout engine, geometry validator, DDS/SVG/PNG preview renderer and .gui emitter, with an MCP tool surface and a local drag-and-drop web UI Target: Stellaris 4.4.x (Pegasus).",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "rstellarisgui": "src/index.mjs"
+  },
+  "files": [
+    "src",
+    "resources",
+    "knowledge",
+    "web",
+    "vendor",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/index.mjs",
+    "web": "node src/index.mjs --web",
+    "build": "node scripts/build-knowledge.mjs",
+    "build:check": "node scripts/build-knowledge.mjs --check",
+    "selftest": "node scripts/selftest.mjs",
+    "protocol-test": "node scripts/protocol-test.mjs",
+    "census": "node scripts/gui-census.mjs",
+    "kind-census": "node scripts/kind-census.mjs",
+    "calibrate": "node scripts/calibrate-coords.mjs --compare",
+    "docs": "node scripts/generate-docs.mjs",
+    "docs:check": "node scripts/generate-docs.mjs --check",
+    "verify": "node scripts/build-knowledge.mjs --check && node scripts/selftest.mjs && node scripts/protocol-test.mjs"
+  },
+  "keywords": [
+    "stellaris",
+    "paradox",
+    "modding",
+    "gui",
+    "interface",
+    "mcp",
+    "agent",
+    "dds",
+    "layout",
+    "knowledge-base",
+    "validator",
+    "svg",
+    "preview"
+  ],
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/g5Sunnystarscout/RStellarisGui.git"
+  },
+  "homepage": "https://github.com/g5Sunnystarscout/RStellarisGui#readme",
+  "bugs": {
+    "url": "https://github.com/g5Sunnystarscout/RStellarisGui/issues"
+  },
+  "author": "Tang Xuxin <239907224+g5Sunnystarscout@users.noreply.github.com>"
+}

@@ -1,0 +1,1498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RStellarisGui - local layout editor</title>
+<!--
+  The RStellarisGui page. Zero dependencies, no build step.
+
+  It is intentionally a single file: the whole point of this front end is that it shares
+  src/lib/* with the MCP tools, so there is nothing to bundle and nothing to keep in sync
+  beyond the HTTP calls below.
+
+  Coordinate note: the canvas draws in the 1920x1080 base resolution and says so on screen.
+  Every coordinate this page reads or writes is CANONICAL - origin at the parent's top-left,
+  +x right, +y down, `position` being the pivot offset from the parent's `orientation` anchor
+  (the same meaning for every orientation). The server converts it to and from the engine's
+  own anchor-relative fields in one place (src/lib/coords.mjs), so the drag handler only has
+  to convert through the parent rect and the element's `origo` - it never touches engine axes.
+-->
+<style>
+  :root {
+    --bg: #0e1319; --panel: #151c24; --panel-2: #1c2530; --line: #2a3542;
+    --text: #dbe4ec; --muted: #8ea1b4; --accent: #4aa3ff; --error: #ff5c52;
+    --warn: #ffb020; --info: #5ac8fa; --ok: #46d17a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-rows: auto 1fr; grid-template-columns: 300px 1fr 340px;
+    grid-template-areas: "head head head" "left canvas right"; height: 100vh; overflow: hidden;
+  }
+  header {
+    grid-area: head; display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  header .tag { color: var(--muted); font-size: 11px; }
+  header .spacer { flex: 1; }
+  button, input, select { font: inherit; color: inherit; }
+  button {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1d4e7f; border-color: #2a6ba8; }
+  button.danger { border-color: #6b2a2a; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input, select {
+    background: #0d1218; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; width: 100%;
+  }
+  aside { overflow-y: auto; background: var(--panel); }
+  #left { grid-area: left; border-right: 1px solid var(--line); }
+  #right { grid-area: right; border-left: 1px solid var(--line); }
+  #canvas-wrap { grid-area: canvas; overflow: auto; padding: 14px; background: #0a0e13; }
+  section { border-bottom: 1px solid var(--line); }
+  section > h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+    margin: 0; padding: 8px 12px; background: var(--panel-2); cursor: pointer; user-select: none;
+  }
+  section > .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: center; }
+  .row label { color: var(--muted); font-size: 11px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .hint { color: var(--muted); font-size: 11px; }
+  #tree { padding: 6px 0; }
+  .node {
+    padding: 3px 12px; cursor: pointer; display: flex; gap: 6px; align-items: baseline;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .node:hover { background: #1a2330; }
+  .node.sel { background: #1d4e7f; }
+  .node .kind { color: var(--muted); font-size: 10px; }
+  .node .zero { color: var(--warn); }
+  #canvas {
+    position: relative; background: #12161c; border: 1px solid var(--line);
+    box-shadow: 0 0 0 1px #000;
+  }
+  #canvas svg { display: block; }
+  .handle {
+    position: absolute; background: var(--accent); border: 1px solid #04121f;
+    opacity: .85; box-sizing: border-box;
+  }
+  .handle:hover { opacity: 1; background: #7cc0ff; }
+  .handle-nw, .handle-ne, .handle-sw, .handle-se { background: #7cc0ff; }
+  #results { display: flex; flex-direction: column; gap: 4px; }
+  .asset {
+    display: flex; gap: 8px; align-items: center; padding: 4px; border: 1px solid transparent;
+    border-radius: 4px; cursor: pointer;
+  }
+  .asset:hover { border-color: var(--accent); background: #1a2330; }
+  .asset img, .asset .ph {
+    width: 40px; height: 30px; object-fit: contain; background: #0d1218; border: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .asset .ph { display: grid; place-items: center; color: var(--muted); font-size: 9px; }
+  .asset .meta { min-width: 0; }
+  .asset .nm { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asset .sz { color: var(--muted); font-size: 10px; }
+  .finding { border-left: 3px solid var(--line); padding: 5px 8px; font-size: 11px; }
+  .finding.error { border-color: var(--error); }
+  .finding.warning { border-color: var(--warn); }
+  .finding.info { border-color: var(--info); }
+  .finding .rule { font-weight: 600; }
+  .finding .fix { color: var(--muted); }
+  .verdict { font-weight: 600; }
+  .verdict.pass { color: var(--ok); }
+  .verdict.fail { color: var(--error); }
+  #status { font-size: 11px; color: var(--muted); }
+  table.rects { width: 100%; border-collapse: collapse; font-size: 10px; }
+  table.rects th, table.rects td { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  table.rects th { color: var(--muted); font-weight: 500; }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 9px; background: var(--panel-2); font-size: 10px; }
+  .warnbox { background: #33260a; border: 1px solid #6b4e12; padding: 6px 8px; border-radius: 4px; font-size: 11px; }
+  /* ---- handoff ---- */
+  .lock { font-size: 10px; color: #ffd166; }
+  .node.locked > span:first-child { color: #ffd166; }
+  .node.parked > span:first-child { color: #8ea1b4; font-style: italic; }
+  .node.changed { box-shadow: inset 3px 0 0 #ffd166; }
+  .node .parked-tag { color: #7f8fa2; font-size: 10px; }
+  #pending-badge {
+    font-size: 11px; padding: 3px 9px; border-radius: 10px; background: var(--panel-2);
+    border: 1px solid var(--line); color: var(--muted); cursor: pointer; white-space: nowrap;
+  }
+  #pending-badge.ready { border-color: #6b4e12; background: #33260a; color: #ffd166; }
+  #btn-submit { background: #1e5c3a; border-color: #2f8a58; }
+  #submit-note { font-size: 11px; }
+  .refusal { border-left: 3px solid var(--error); background: #2a1414; padding: 6px 8px; border-radius: 4px; font-size: 11px; }
+  .refusal .rule { font-weight: 600; color: #ff8b82; }
+  .submission { border-left: 3px solid var(--line); padding: 5px 8px; font-size: 11px; }
+  .submission.invalid { border-color: var(--error); background: #2a1414; }
+  .submission.flagged { border-color: var(--warn); }
+  pre.diff {
+    white-space: pre-wrap; word-break: break-word; background: #0d1218; border: 1px solid var(--line);
+    border-radius: 4px; padding: 6px; font-size: 10px; max-height: 240px; overflow: auto; margin: 0;
+  }
+  .changed-row { color: #ffd166; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RStellarisGui</h1>
+  <span class="tag" id="tag">loading...</span>
+  <span class="spacer"></span>
+  <button id="btn-validate">Validate</button>
+  <button id="btn-fill" title="Fit the canvas to the window">Fit</button>
+  <button id="btn-add-container">+ Container</button>
+  <button id="btn-add-text">+ Text</button>
+  <button id="btn-add-button">+ Button</button>
+  <button id="btn-delete" class="danger">Delete</button>
+  <span id="status"></span>
+  <button id="pending-badge" title="Layout submissions waiting for the agent. Click to refresh and see them.">pending: -</button>
+  <button id="btn-export" class="primary">Export files...</button>
+  <button id="btn-submit" class="primary" title="Write the current layout, its diff against the layout as loaded, and its validation verdict to the agent's handoff area.">提交给 Agent / Submit to agent</button>
+</header>
+
+<aside id="left">
+  <section>
+    <h2>Layout</h2>
+    <div class="body">
+      <div class="row"><label>window</label><input id="win-name"></div>
+      <div class="grid2">
+        <div><label class="hint">width</label><input id="win-width"></div>
+        <div><label class="hint">height</label><input id="win-height"></div>
+      </div>
+      <div class="hint">Base resolution: <span id="base-res">1920x1080</span>. All geometry is in these pixels.</div>
+    </div>
+  </section>
+  <section>
+    <h2>Elements</h2>
+    <div class="body" style="padding-bottom:0">
+      <div class="row">
+        <label>layout</label>
+        <select id="layout-select" title="Load a layout into the canvas. The revision it replaced is remembered, so 'Changes since loaded' works for every switch."></select>
+      </div>
+      <div class="hint" id="lock-summary"></div>
+    </div>
+    <div id="tree"></div>
+  </section>
+  <section>
+    <h2>Variables (@)</h2>
+    <div class="body" id="vars"></div>
+  </section>
+  <section>
+    <h2>Rect table</h2>
+    <div class="body" id="rect-table"></div>
+  </section>
+</aside>
+
+<div id="canvas-wrap">
+  <div id="canvas"></div>
+  <div class="hint" style="margin-top:8px">
+    Drag an element to move it. Drag ANY edge or corner of the selection to resize it (eight handles;
+    a kind whose engine parser rejects <code>size</code>, such as <code>iconType</code>, gets none,
+    and says so). Coordinates are shown in the 1920x1080 base resolution; the game scales the whole
+    UI, so overlap is only meaningful at this base. A resize of a text element writes
+    <code>maxWidth</code>/<code>maxHeight</code>; a button or list writes <code>size</code>.
+  </div>
+</div>
+
+<aside id="right">
+  <section id="sec-handoff">
+    <h2>Handoff to agent</h2>
+    <div class="body">
+      <div class="hint">
+        Press <b>提交给 Agent / Submit to agent</b> in the header. The current layout, a
+        human-readable diff against the layout <i>as it was loaded</i>, the validation verdict and a
+        timestamp are written to the agent's handoff area. An invalid layout is submitted too, but
+        clearly marked invalid so it cannot pass as a new baseline.
+      </div>
+      <input id="submit-note" placeholder="note for the agent (optional)">
+      <div id="handoff-out" class="hint">nothing submitted yet</div>
+      <div id="handoff-list"></div>
+    </div>
+  </section>
+  <section id="sec-changes">
+    <h2>Changes since loaded</h2>
+    <div class="body">
+      <label class="hint"><input type="checkbox" id="show-changes" style="width:auto" checked>
+        outline changed elements on the canvas</label>
+      <div id="change-summary" class="hint">no changes.</div>
+      <div id="change-list"></div>
+      <details>
+        <summary class="hint" style="cursor:pointer">markdown diff (the same text the agent receives)</summary>
+        <pre class="diff" id="change-md"></pre>
+      </details>
+    </div>
+  </section>
+  <section>
+    <h2>Properties</h2>
+    <div class="body" id="props"><div class="hint">Select an element.</div></div>
+  </section>
+  <section>
+    <h2>Assets</h2>
+    <div class="body">
+      <input id="asset-q" placeholder="search sprites (e.g. close, tile, button)">
+      <div style="display:flex; gap:6px">
+        <button id="asset-go">Search</button>
+        <button id="asset-defaults">Default parts</button>
+      </div>
+      <div id="results"></div>
+    </div>
+  </section>
+  <section>
+    <h2>Validation</h2>
+    <div class="body"><div id="validation"><div class="hint">Not run yet.</div></div></div>
+  </section>
+  <section>
+    <h2>Export</h2>
+    <div class="body">
+      <div class="hint">
+        Files are written ONLY to the path below. A game install, the user-data folder, or a folder
+        containing <code>descriptor.mod</code> is refused.
+      </div>
+      <input id="export-root" placeholder="D:\path\to\output">
+      <div class="grid2">
+        <input id="export-stem" placeholder="file stem">
+        <select id="export-lang">
+          <option>english</option><option>braz_por</option><option>french</option><option>german</option>
+          <option>japanese</option><option>korean</option><option>polish</option><option>russian</option>
+          <option>simp_chinese</option><option>spanish</option><option>turkish</option>
+        </select>
+      </div>
+      <label class="hint"><input type="checkbox" id="export-diplomatic" style="width:auto"> include <code>diplomatic = yes</code> in the event</label>
+      <button id="btn-export-2" class="primary">Write files</button>
+      <div id="export-out" class="hint"></div>
+    </div>
+  </section>
+</aside>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------- state
+const state = {
+  id: null,
+  layout: null,
+  rects: [],
+  selected: null,       // element path
+  state: null,
+  zoom: 0.5,
+  findings: [],
+  locks: new Map(),     // element path -> the protection record the server enforces
+  customGuiWindows: [],
+  change: null,         // the diff against the compared revision
+  pendingCount: 0,
+  showChanges: true,
+};
+
+const CANVAS = { w: 1920, h: 1080 };
+
+// The engine's size keyword is per-kind, and the table lives in src/lib/kinds.mjs (the single
+// source of truth). /api/state carries it, so the page cannot drift from the emitter:
+//   size-width-height  containerWindowType / gridBoxType      -> size = { width height }
+//   size-x-y           button / listBox / scrollbar / ...     -> size = { x y }
+//   maxWidth/maxHeight instantTextBoxType                     -> maxWidth / maxHeight
+//   none               iconType / checkboxType                -> the sprite's natural size
+const KIND_CACHE = new Map();
+function kindEntry(kind) {
+  if (!KIND_CACHE.size) {
+    for (const entry of (state.state && state.state.elementKinds) || []) KIND_CACHE.set(entry.kind, entry);
+  }
+  return KIND_CACHE.get(kind) || null;
+}
+
+/** How this element declares its size, in the model. */
+function sizeFormOf(node) {
+  const entry = kindEntry(node && node.kind);
+  return (entry && entry.sizeForm) || 'size-width-height';
+}
+
+/** The `op: set` path that carries this element's size, or null when the engine takes none. */
+function sizePathOf(node) {
+  const form = sizeFormOf(node);
+  if (form === 'none') return null;
+  return form === 'maxWidth/maxHeight' ? 'maxWidth/maxHeight' : 'size';
+}
+
+const $ = (id) => document.getElementById(id);
+const status = (text) => { $('status').textContent = text; };
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const text = await response.text();
+  let value;
+  try { value = text ? JSON.parse(text) : null; } catch { value = { error: text }; }
+  if (!response.ok) throw new Error(value?.error || response.statusText);
+  return value;
+}
+
+const post = (path, body) => api(path, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+// ---------------------------------------------------------------------------- bootstrap
+async function boot() {
+  const state_ = await api('/api/state');
+  state.state = state_;
+  CANVAS.w = state_.baseResolution.width;
+  CANVAS.h = state_.baseResolution.height;
+  $('base-res').textContent = CANVAS.w + 'x' + CANVAS.h;
+  $('tag').textContent = 'v' + state_.server.version + '  |  ' +
+    (state_.assetIndex ? state_.assetIndex.spriteCount + ' sprites, ' + state_.assetIndex.fontCount + ' fonts (Stellaris ' + state_.assetIndex.version + ')' : 'asset index not loaded');
+  renderLayoutSelect(state_.layouts, state_.currentLayoutId);
+  renderPending(state_.handoff);
+  await loadLayout(state_.currentLayoutId);
+  await searchAssets('close');
+  // The pending indicator is the whole of the "the agent has not picked it up yet" feedback, so it
+  // polls rather than asking the human to reload. Cheap: one directory listing server-side.
+  setInterval(() => { refreshPending().catch(() => {}); }, 5000);
+}
+
+function renderLayoutSelect(layouts, currentId) {
+  const select = $('layout-select');
+  select.innerHTML = '';
+  for (const entry of layouts || []) {
+    const option = document.createElement('option');
+    option.value = entry.id;
+    option.textContent = entry.id + (entry.name && entry.name !== entry.id ? '  (' + entry.name + ')' : '') +
+      (entry.handoffId ? '  [handoff ' + entry.handoffId + ']' : '');
+    if (entry.id === currentId) option.selected = true;
+    select.appendChild(option);
+  }
+  select.onchange = () => loadLayout(select.value);
+}
+
+async function loadLayout(id) {
+  const data = await api('/api/layout' + (id ? '?id=' + encodeURIComponent(id) : ''));
+  state.id = data.id;
+  state.layout = data.layout;
+  state.rects = data.rects;
+  state.locks = new Map((data.locks || []).map((entry) => [entry.path, entry]));
+  state.customGuiWindows = data.customGuiWindows || [];
+  state.change = data.change || null;
+  if (!state.selected || !data.elements.some((entry) => entry.path === state.selected)) {
+    state.selected = data.elements.length ? data.elements[0].path : null;
+  }
+  renderAll();
+  renderChangePanel();
+  renderLockSummary();
+}
+
+function renderAll() {
+  $('win-name').value = state.layout.name || '';
+  $('win-width').value = (state.layout.root.size && state.layout.root.size.width) || '';
+  $('win-height').value = (state.layout.root.size && state.layout.root.size.height) || '';
+  renderTree();
+  renderVariables();
+  renderRects();
+  renderCanvas();
+  renderProps();
+}
+
+function renderLockSummary() {
+  const host = $('lock-summary');
+  const windows = state.customGuiWindows || [];
+  const protectedCount = state.locks.size;
+  host.innerHTML = protectedCount === 0
+    ? 'No contract element in this layout: nothing is locked.'
+    : '<span class="lock">&#128274;</span> ' + protectedCount + ' protected element(s) in ' +
+      windows.length + ' custom_gui window(s). They cannot be deleted or renamed; `close` keeps the top-right ' +
+      'corner. The server refuses these operations even if the page is bypassed.';
+}
+
+// ---------------------------------------------------------------------------- tree
+function elements() {
+  const out = [];
+  (function walk(node, parent, depth, path) {
+    const label = node.name || node.id || ('#' + depth);
+    const here = path ? path + '/' + label : label;
+    out.push({ node, parent, depth, path: here });
+    for (const child of node.children || []) walk(child, node, depth + 1, here);
+  })(state.layout.root, null, 0, '');
+  return out;
+}
+
+function renderTree() {
+  const host = $('tree');
+  host.innerHTML = '';
+  const rectByPath = new Map(state.rects.map((r) => [r.path, r]));
+  for (const entry of elements()) {
+    const div = document.createElement('div');
+    const rect = rectByPath.get(entry.path);
+    const zero = rect && (rect.width <= 0 || rect.height <= 0);
+    const lock = state.locks.get(entry.path);
+    // A parked element is DELIBERATE: it satisfies the engine's name lookup while showing nothing.
+    // It is drawn here in muted italics with an explicit tag, because the alternative - the human
+    // finding a 0x0 element three thousand pixels off-canvas and "fixing" it by deleting it - is
+    // how the name contract gets broken by accident.
+    const parked = zero && rect && (rect.x <= -1000 || rect.y <= -1000);
+    div.className = 'node' + (entry.path === state.selected ? ' sel' : '') +
+      (lock ? ' locked' : '') + (parked ? ' parked' : '') + (rect && rect.changed ? ' changed' : '');
+    div.style.paddingLeft = (12 + entry.depth * 12) + 'px';
+    div.innerHTML =
+      (lock ? '<span class="lock" title="' + escapeHtml(lock.reason + ' - not deletable, not renamable' +
+        (lock.close ? '; the close button stays in the window\'s top-right corner' : '')) + '">&#128274;</span>' : '') +
+      '<span>' + escapeHtml(entry.node.name || entry.node.id || '?') + '</span>' +
+      (parked ? '<span class="parked-tag" title="parked at ' + rect.x + ',' + rect.y + ' with a zero size: deliberate, it keeps the name the engine looks up while drawing nothing. Do not give it a shortcut.">parked</span>' : '') +
+      '<span class="kind' + (zero ? ' zero' : '') + '">' + escapeHtml(entry.node.kind || '') +
+      (zero ? ' 0x0' : '') + '</span>' +
+      (rect && rect.changed ? '<span class="lock" title="this element differs from the compared revision">&#9679;</span>' : '');
+    div.onclick = () => {
+      state.selected = entry.path;
+      renderTree(); renderCanvas(); renderProps();
+    };
+    host.appendChild(div);
+  }
+}
+
+function renderVariables() {
+  const host = $('vars');
+  host.innerHTML = '';
+  const entries = Object.entries(state.layout.variables || {});
+  if (!entries.length) { host.innerHTML = '<div class="hint">none declared</div>'; return; }
+  for (const [name, value] of entries) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<label>' + escapeHtml(name) + '</label>';
+    const input = document.createElement('input');
+    input.value = value;
+    input.onchange = () => edit([{ op: 'set_variable', name, value: input.value }]);
+    row.appendChild(input);
+    host.appendChild(row);
+  }
+}
+
+function renderRects() {
+  const host = $('rect-table');
+  const rows = state.rects.slice(0, 80).map((rect) =>
+    '<tr><td>' + escapeHtml(short(rect.path, 30)) + '</td><td>' + escapeHtml(rect.kind) + '</td>' +
+    '<td>' + rect.x + ',' + rect.y + '</td><td>' + rect.width + 'x' + rect.height + '</td></tr>').join('');
+  host.innerHTML = '<table class="rects"><tr><th>element</th><th>kind</th><th>x,y</th><th>w x h</th></tr>' +
+    rows + '</table>' + (state.rects.length > 80 ? '<div class="hint">' + (state.rects.length - 80) + ' more...</div>' : '');
+}
+
+// ---------------------------------------------------------------------------- canvas
+function renderCanvas() {
+  const host = $('canvas');
+  const scale = state.zoom;
+  host.style.width = (CANVAS.w * scale) + 'px';
+  host.style.height = (CANVAS.h * scale) + 'px';
+  // The server renders the same SVG the MCP tools would produce, so the page and the agent see
+  // one identical picture - no second renderer to drift out of sync. `changes=true` outlines the
+  // elements that differ from the compared revision, which is how the AGENT shows the HUMAN what
+  // it changed.
+  const url = '/api/preview.svg?id=' + encodeURIComponent(state.id) +
+    (state.findings.length ? '&findings=true' : '') +
+    (state.showChanges ? '&changes=true' : '');
+  host.innerHTML = '<img id="preview-img" src="' + url + '" style="width:100%;height:100%;display:block" alt="layout preview">';
+
+  // Interactive layer: one absolutely positioned hit box per element, plus a resize handle.
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0';
+  for (const rect of state.rects) {
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const box = document.createElement('div');
+    const selected = rect.path === state.selected;
+    const lock = state.locks.get(rect.path);
+    // A locked element is outlined in the lock colour and gets a move cursor, not a grab cursor:
+    // it can still be dragged (a contract element legitimately moves), it just cannot be deleted
+    // or renamed. Keep the visual difference, so the lock is legible before the refusal.
+    const edge = selected ? '#4aa3ff' : rect.changed ? '#ffd166' : lock ? 'rgba(255,209,102,0.45)' : 'rgba(74,163,255,0.18)';
+    box.style.cssText = 'position:absolute;border:1px solid ' + edge + ';cursor:move;box-sizing:border-box' +
+      (rect.changed ? ';box-shadow:0 0 0 1px rgba(255,209,102,0.35)' : '');
+    box.style.left = (rect.x * scale) + 'px';
+    box.style.top = (rect.y * scale) + 'px';
+    box.style.width = (rect.width * scale) + 'px';
+    box.style.height = (rect.height * scale) + 'px';
+    box.title = rect.path + '\n' + rect.kind + '\n' + rect.x + ',' + rect.y + ' ' + rect.width + 'x' + rect.height +
+      (lock ? '\nLOCKED: ' + lock.reason : '') +
+      (rect.changed ? '\nchanged since the compared revision' : '');
+    box.onmousedown = (event) => beginDrag(event, rect, 'move');
+    overlay.appendChild(box);
+
+    // ------------------------------------------------------------------ resize handles
+    //
+    // EIGHT handles: four edges (n/e/s/w) and four corners (nw/ne/sw/se), so a box can be resized
+    // from whichever side the human grabs - the single bottom-right handle was the weakest part of
+    // this editor.
+    //
+    // Two rules make them safe rather than fiddly:
+    //   * they are laid INSIDE the element's own rect (never straddling the boundary), so they can
+    //     only ever cover the selected element's own pixels - never a neighbour's, and never a
+    //     smaller element sitting on top of the selection;
+    //   * they are appended AFTER the element boxes and carry a higher z-index, so a handle grab
+    //     resizes while a grab anywhere else on the element moves it.
+    if (selected && rect.width > 0 && rect.height > 0) {
+      // The handles depend on the element's KIND (a kind whose parser rejects `size` gets none), so
+      // the node has to be looked up here - the rect alone does not carry the kind's size form.
+      const selectedEntry = elements().find((item) => item.path === rect.path);
+      for (const handle of selectedEntry ? resizeHandlesFor(selectedEntry.node) : []) {
+        const grip = document.createElement('div');
+        grip.className = 'handle handle-' + handle.dir;
+        grip.style.cssText =
+          'position:absolute;z-index:6;' +
+          'left:' + handle.left(rect, scale) + 'px;top:' + handle.top(rect, scale) + 'px;' +
+          'width:' + handle.width(rect, scale) + 'px;height:' + handle.height(rect, scale) + 'px;' +
+          'cursor:' + handle.cursor + ';';
+        grip.title = handle.label + ' - drag to resize';
+        grip.onmousedown = (event) => beginDrag(event, rect, 'resize', handle.dir);
+        overlay.appendChild(grip);
+      }
+    }
+  }
+  // Parked elements are at -3000,-3000 with a zero size, so their boxes are skipped above. Draw an
+  // explicit marker for each one instead: the human must be able to SEE that it is there on purpose.
+  for (const rect of state.rects) {
+    if (rect.width > 0 && rect.height > 0) continue;
+    if (!(rect.x <= -1000 || rect.y <= -1000)) continue;
+    const marker = document.createElement('div');
+    marker.className = 'parked-marker';
+    marker.style.cssText = 'position:absolute;left:4px;bottom:' + (4 + parkedIndex(rect.path) * 16) + 'px;' +
+      'font-size:10px;color:#8ea1b4;font-style:italic;pointer-events:none';
+    marker.textContent = 'parked off-canvas: ' + (rect.name || rect.path.split('/').pop()) + ' (' + rect.x + ',' + rect.y + ' 0x0)';
+    overlay.appendChild(marker);
+  }
+  host.appendChild(overlay);
+}
+
+function parkedIndex(path) {
+  const parked = state.rects.filter((r) => (r.width <= 0 || r.height <= 0) && (r.x <= -1000 || r.y <= -1000));
+  return Math.max(0, parked.findIndex((r) => r.path === path));
+}
+
+// ---------------------------------------------------------------------------- resize handles
+//
+// The eight grips, each as a rectangle INSIDE the element's own box. The thickness is 8px and the
+// length is the box's own dimension minus 2*8, so a grip never touches a neighbouring element and
+// never reaches outside the selection. They are drawn at the base-resolution scale, i.e. through the
+// same `scale` the boxes use, so they stay the same on-screen size as the human zooms out.
+const HANDLE_THICKNESS = 8;
+const HANDLE_EDGE = 30; // the minimum length an edge grip keeps, so a small box is still grabbable
+
+/** Which edges/corners this element may be resized from. */
+function resizeHandlesFor(node) {
+  const form = sizeFormOf(node);
+  // A kind whose engine parser takes no `size` token at all (`iconType`, `checkboxType`) CANNOT be
+  // resized: writing a size would produce "Unexpected token: size" and the block would be dropped.
+  // So the handles are not offered, rather than offered and then refused.
+  if (form === 'none') return [];
+  const t = HANDLE_THICKNESS;
+  const corner = t + 4;
+  const mk = (dir, cursor, label, x, y, w, h) => ({
+    dir,
+    cursor,
+    label,
+    // Edges: the full span inside the box, minus the corner blocks, so a corner grab always wins.
+    left: (rect, scale) => x(rect) * scale,
+    top: (rect, scale) => y(rect) * scale,
+    width: (rect, scale) => Math.max(t, w(rect)) * scale,
+    height: (rect, scale) => Math.max(t, h(rect)) * scale,
+  });
+  const insetL = (rect) => rect.x + corner;
+  const insetT = (rect) => rect.y + corner;
+  const innerW = (rect) => rect.width - 2 * corner;
+  const innerH = (rect) => rect.height - 2 * corner;
+  return [
+    // corners
+    mk('nw', 'nwse-resize', 'top-left corner', (rect) => rect.x, (rect) => rect.y, () => corner, () => corner),
+    mk('ne', 'nesw-resize', 'top-right corner', (rect) => rect.x + rect.width - corner, (rect) => rect.y, () => corner, () => corner),
+    mk('sw', 'nesw-resize', 'bottom-left corner', (rect) => rect.x, (rect) => rect.y + rect.height - corner, () => corner, () => corner),
+    mk('se', 'nwse-resize', 'bottom-right corner', (rect) => rect.x + rect.width - corner, (rect) => rect.y + rect.height - corner, () => corner, () => corner),
+    // edges: a thin bar along the box, spanning the middle
+    mk('n', 'ns-resize', 'top edge', insetL, (rect) => rect.y, innerW, () => t),
+    mk('s', 'ns-resize', 'bottom edge', insetL, (rect) => rect.y + rect.height - t, innerW, () => t),
+    mk('w', 'ew-resize', 'left edge', (rect) => rect.x, insetT, () => t, innerH),
+    mk('e', 'ew-resize', 'right edge', (rect) => rect.x + rect.width - t, insetT, () => t, innerH),
+  ];
+}
+
+/** The `n`/`s`/`e`/`w` set a direction moves. `se` grows right and down; `nw` grows left and up. */
+function resizeAxes(direction) {
+  return { left: direction.includes('w'), right: direction.includes('e'), top: direction.includes('n'), bottom: direction.includes('s') };
+}
+
+/**
+ * Resize `origin` (the element's rect as it is now) by a drag of `dx`/`dy` base-resolution pixels
+ * from a handle, returning the new canonical `position` AND the new size.
+ *
+ * This is the anchor-aware part, and it is done entirely in the CANONICAL frame:
+ *
+ *   * `position` is the offset of the element's PIVOT (its `origo` point) from the parent's
+ *     `orientation` anchor, in a frame with the origin top-left and +y down. `src/lib/coords.mjs`
+ *     owns the conversion to and from the engine's own field (`canonicalPositionToEngine` and its
+ *     inverse), and this page never touches an engine axis.
+ *   * The hands grab a SCREEN edge. For a `lower_right` or `center` anchor that is not the same as
+ *     the element's top-left corner, so the resize works from the element's top-left CORNER: the
+ *     corner is what the layout engine ultimately places, and it is derived from the pivot and the
+ *     own `origo` (`cornerFromPivot` / `pivotFromCorner` in coords.mjs are the same two lines, kept
+ *     in one place for the agent side; the page uses the equivalent helpers below so it shares the
+ *     anchor table with the rest of the page).
+ *   * The grabbed edges move, the OPPOSITE edges stay put. That is what keeps the anchored edge
+ *     where the user sees it even when the parent's orientation is `center` or `lower_right`.
+ *
+ * @returns {{position: {x:number,y:number}, size: {width:number,height:number}, width: number, height: number}}
+ */
+function resizeResult(origin, originNode, parentRect, orientation, direction, dx, dy, form) {
+  const axes = resizeAxes(direction);
+  const origo = anchorFraction(originNode.origo || (originNode.centerPosition ? 'center' : 'upper_left'));
+
+  // The element's canonical corner and its pivot, as the layout engine sees them.
+  const startCorner = { x: origin.x, y: origin.y };
+  const startPivot = pivotFromCorner(startCorner, origin, origo);
+
+  // Which sides move, and where the opposite (fixed) sides are.
+  const fixedLeft = startCorner.x;
+  const fixedTop = startCorner.y;
+  const fixedRight = startCorner.x + origin.width;
+  const fixedBottom = startCorner.y + origin.height;
+
+  let left = axes.left ? fixedLeft + dx : fixedLeft;
+  let right = axes.right ? fixedRight + dx : fixedRight;
+  let top = axes.top ? fixedTop + dy : fixedTop;
+  let bottom = axes.bottom ? fixedBottom + dy : fixedBottom;
+
+  // A minimum box of 1px, and no inverted box: dragging past the opposite edge pins at 1px rather
+  // than producing a negative size the emitter would have to resolve. The clamp re-anchors the box
+  // on the side that did NOT move, so the fixed edge really stays fixed.
+  if (right - left < 1) {
+    if (axes.left) left = fixedRight - 1;
+    else right = fixedLeft + 1;
+  }
+  if (bottom - top < 1) {
+    if (axes.top) top = fixedBottom - 1;
+    else bottom = fixedTop + 1;
+  }
+
+  const corner = { x: left, y: top };
+  const size = { width: Math.round(right - left), height: Math.round(bottom - top) };
+  const pivot = pivotFromCorner(corner, size, origo);
+
+  // The new canonical `position`: the old one moved by how far the PIVOT moved. Doing it this way
+  // means the canvas position is preserved for any `orientation` the parent uses - the property the
+  // brief asks for - without re-deriving the anchor at all, and for an element whose `origo` is its
+  // top-left corner (the common case) it is exactly the corner delta.
+  const position = {
+    x: Math.round((originNode.position?.x ?? 0) + (pivot.x - startPivot.x)),
+    y: Math.round((originNode.position?.y ?? 0) + (pivot.y - startPivot.y)),
+  };
+  return {
+    position,
+    size,
+    width: size.width,
+    height: size.height,
+    kept: { left: !axes.left, right: !axes.right, top: !axes.top, bottom: !axes.bottom },
+    form,
+    // For the record: the canvas edge the handle grabbed must not have moved. This is asserted by
+    // scripts/selftest.mjs against the same function, and here it is what the overlay paints from.
+    pivot,
+  };
+}
+
+/** The inverse of `cornerFromPivot`, in the canonical frame. Mirrors coords.mjs's own helper. */
+function pivotFromCorner(corner, size, origoFraction) {
+  return {
+    x: corner.x + (size.width ?? 0) * origoFraction.x,
+    y: corner.y + (size.height ?? 0) * origoFraction.y,
+  };
+}
+
+/**
+ * Drag an element. The browser gives us screen pixels, so: divide by the zoom to get
+ * base-resolution pixels, convert the absolute corner to the element's PIVOT (its `origo` point),
+ * and subtract the parent's `orientation` anchor to get the CANONICAL `position`.
+ *
+ * The canonical frame is origin top-left, +y down, and `position` is the pivot offset from that
+ * anchor - it means the same thing for every orientation. The engine's own reading of the field
+ * flips the sign of y for a `lower_*` anchor, and the emitter applies that flip from the canonical
+ * value (src/lib/coords.mjs is the single implementation), so this UI never handles engine axes.
+ */
+/**
+ * `anchorDirectionY` mirrors `yDirectionForAnchor` in src/lib/coords.mjs, which currently returns +1
+ * for EVERY anchor: the engine's y for a `lower_*` anchor is measured down from the parent's bottom
+ * edge, so the sign never changes - only the anchor point does. It is kept as a function so the one
+ * place a sign could ever change is one place, and scripts/calibrate-coords.mjs measures it.
+ */
+function anchorDirectionY(orientation) {
+  void orientation;
+  return 1;
+}
+
+/** Canvas pivot point -> canonical `position`, for an element in `parentRect`. */
+function canonicalPositionFromPivot(pivotX, pivotY, parentRect, orientation) {
+  const anchor = anchorFraction(orientation);
+  return {
+    x: Math.round(pivotX - (parentRect.x + parentRect.width * anchor.x)),
+    y: Math.round((pivotY - (parentRect.y + parentRect.height * anchor.y)) * anchorDirectionY(orientation)),
+  };
+}
+
+/** Canonical `position` -> canvas pivot point. The inverse of the function above. */
+function pivotFromCanonicalPosition(position, parentRect, orientation) {
+  const anchor = anchorFraction(orientation);
+  const dirY = anchorDirectionY(orientation);
+  return {
+    x: parentRect.x + parentRect.width * anchor.x + (position?.x || 0),
+    y: parentRect.y + parentRect.height * anchor.y + dirY * (position?.y || 0),
+  };
+}
+
+function beginDrag(event, rect, mode, direction) {
+  event.preventDefault();
+  event.stopPropagation();
+  state.selected = rect.path;
+  const scale = state.zoom;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const origin = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  const entry = elements().find((item) => item.path === rect.path);
+  if (!entry) return;
+  // A PARKED element is deliberately at -3000,-3000 with a zero size. Dragging it is almost always
+  // an accident - a stray click on the overlay - and it would un-park a contract element that the
+  // window needs to keep off-canvas. Say so instead of silently moving it.
+  if (rect.width <= 0 || rect.height <= 0) {
+    status('this element is parked off-canvas on purpose (0x0); dragging is disabled. Select it and use the property form if you really must move it.');
+    return;
+  }
+
+  const parentRect = parentRectOf(entry.path);
+  const orientation = (entry.node.orientation || 'upper_left');
+  // A kind with no `size` token cannot be resized at all, so the handles are not drawn for it - but
+  // a programmatic call still says why rather than writing a field the engine rejects.
+  const form = sizeFormOf(entry.node);
+  if (mode === 'resize' && form === 'none') {
+    status('a ' + entry.node.kind + ' draws at its sprite texture size: the engine rejects a `size` block (Unexpected token: size), so it cannot be resized. Pick a sprite of the size you want.');
+    return;
+  }
+
+  const move = (moveEvent) => {
+    const dx = (moveEvent.clientX - startX) / scale;
+    const dy = (moveEvent.clientY - startY) / scale;
+    if (mode === 'move') {
+      // The dragged offset moves the element's corner, and the pivot moves with it.
+      const position = canonicalPositionFromPivot(origin.x + dx, origin.y + dy, parentRect, orientation);
+      patchLocalNode(entry.node, { position });
+      entry.node.position = position;
+    } else {
+      // Resize from an edge or a corner, entirely in the canonical frame: the grabbed edges move,
+      // the opposite ones stay where the human sees them, and the new `position` is the old one
+      // moved by however far the pivot had to move. See `resizeResult`.
+      const result = resizeResult(origin, entry.node, parentRect, orientation, direction, dx, dy, form);
+      entry.node.position = result.position;
+      if (form === 'maxWidth/maxHeight') {
+        // A text element's box is maxWidth/maxHeight; the engine REJECTS `size` on
+        // instantTextBoxType ("Unexpected token: size" / "Not used, use maxWidth and maxHeight").
+        entry.node.maxWidth = result.width;
+        entry.node.maxHeight = result.height;
+        delete entry.node.size;
+      } else {
+        // button / listBox / scrollbar want `size = { x y }`; container / gridBox want
+        // `size = { width height }`. The model stores width/height and the emitter writes the
+        // spelling the kind's own parser accepts (src/lib/kinds.mjs owns that table).
+        entry.node.size = entry.node.size && typeof entry.node.size === 'object' ? entry.node.size : {};
+        entry.node.size.width = result.width;
+        entry.node.size.height = result.height;
+      }
+    }
+    renderProps();
+    paintRectsProvisional();
+  };
+
+  const up = async () => {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    const target = entry.node.id || entry.node.name;
+    const batch = [];
+    if (mode === 'move') {
+      batch.push({ op: 'set', target, path: 'position', value: entry.node.position });
+    } else {
+      // A resize also moves `position` whenever the dragged edge is not the pivot's own edge
+      // (dragging the west edge of an `upper_left` element, or any edge of an element anchored on
+      // its centre). Both fields go as ONE batch: one round trip, one atomic change.
+      if (sizeFormOf(entry.node) === 'maxWidth/maxHeight') {
+        batch.push({ op: 'set', target, path: 'maxWidth/maxHeight', value: { width: entry.node.maxWidth, height: entry.node.maxHeight } });
+      } else {
+        batch.push({ op: 'set', target, path: 'size', value: entry.node.size });
+      }
+      batch.push({ op: 'set', target, path: 'position', value: entry.node.position });
+    }
+    await edit(batch);
+  };
+
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+}
+
+// The SVG overlay is only redrawn after the server round-trip, so nudge the local DOM meanwhile.
+function paintRectsProvisional() {
+  const host = $('canvas');
+  const overlay = host.lastElementChild;
+  if (!overlay) return;
+  const scale = state.zoom;
+  const boxes = overlay.querySelectorAll('div');
+  let index = 0;
+  const visible = state.rects.filter((rect) => rect.width > 0 && rect.height > 0);
+  for (const rect of visible) {
+    const entry = elements().find((item) => item.path === rect.path);
+    if (entry && entry.node.position) {
+      // Recompute the absolute rect so the overlay follows the cursor without a server call. The
+      // pivot is derived from the canonical `position`, then the element's own `origo` is applied
+      // to reach the corner - the same order the layout engine uses.
+      const parentRect = parentRectOf(rect.path);
+      const pivot = pivotFromCanonicalPosition(entry.node.position, parentRect, entry.node.orientation || 'upper_left');
+      const origo = anchorFraction(entry.node.origo || (entry.node.centerPosition ? 'center' : 'upper_left'));
+      rect.x = Math.round(pivot.x - rect.width * origo.x);
+      rect.y = Math.round(pivot.y - rect.height * origo.y);
+    }
+    if (entry && entry.node) {
+      // A text element's box is maxWidth/maxHeight, not `size`.
+      const size = entry.node.size || (entry.node.maxWidth !== undefined || entry.node.maxHeight !== undefined
+        ? { width: entry.node.maxWidth, height: entry.node.maxHeight }
+        : null);
+      if (size) {
+        if (size.width !== undefined) rect.width = Number(String(size.width).replace(/%.*/,'')) || rect.width;
+        if (size.height !== undefined) rect.height = Number(String(size.height).replace(/%.*/,'')) || rect.height;
+      }
+    }
+    if (boxes[index]) {
+      boxes[index].style.left = (rect.x * scale) + 'px';
+      boxes[index].style.top = (rect.y * scale) + 'px';
+      boxes[index].style.width = (rect.width * scale) + 'px';
+      boxes[index].style.height = (rect.height * scale) + 'px';
+    }
+    index += 1;
+  }
+}
+
+function parentRectOf(path) {
+  const parts = path.split('/');
+  if (parts.length <= 1) return { x: 0, y: 0, width: CANVAS.w, height: CANVAS.h };
+  const parentPath = parts.slice(0, -1).join('/');
+  const parent = state.rects.find((rect) => rect.path === parentPath);
+  return parent || { x: 0, y: 0, width: CANVAS.w, height: CANVAS.h };
+}
+
+const ANCHORS = {
+  upper_left: { x: 0, y: 0 }, center_up: { x: .5, y: 0 }, upper_right: { x: 1, y: 0 },
+  center_left: { x: 0, y: .5 }, center: { x: .5, y: .5 }, center_right: { x: 1, y: .5 },
+  lower_left: { x: 0, y: 1 }, center_down: { x: .5, y: 1 }, lower_right: { x: 1, y: 1 },
+};
+const anchorFraction = (name) => ANCHORS[name] || ANCHORS.upper_left;
+
+function patchLocalNode() { /* the authoritative node lives server-side; dragover is optimistic only */ }
+
+// ---------------------------------------------------------------------------- properties
+function renderProps() {
+  const host = $('props');
+  host.innerHTML = '';
+  const entry = elements().find((item) => item.path === state.selected);
+  if (!entry) { host.innerHTML = '<div class="hint">Select an element.</div>'; return; }
+  const node = entry.node;
+  const rect = state.rects.find((r) => r.path === entry.path);
+
+  const field = (label, value, onChange, type = 'text') => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<label>' + escapeHtml(label) + '</label>';
+    const input = document.createElement('input');
+    input.type = type;
+    input.dataset.field = label.replace(/\s*\(.*\)\s*$/, '').trim();
+    input.value = value === undefined || value === null ? '' : value;
+    input.onchange = () => onChange(input.value);
+    row.appendChild(input);
+    host.appendChild(row);
+    return input;
+  };
+  const select = (label, options, value, onChange) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<label>' + escapeHtml(label) + '</label>';
+    const el = document.createElement('select');
+    for (const option of options) {
+      const opt = document.createElement('option');
+      opt.value = option; opt.textContent = option;
+      if (option === value) opt.selected = true;
+      el.appendChild(opt);
+    }
+    el.onchange = () => onChange(el.value);
+    row.appendChild(el);
+    host.appendChild(row);
+  };
+
+  const info = document.createElement('div');
+  info.className = 'hint';
+  info.textContent = 'path: ' + entry.path + (rect ? '   rect: ' + rect.x + ',' + rect.y + ' ' + rect.width + 'x' + rect.height : '');
+  host.appendChild(info);
+
+  // ---- the guardrails, said in the form itself -----------------------------------------------
+  const lock = state.locks.get(entry.path);
+  const parkedHere = rect && (rect.width <= 0 || rect.height <= 0) && (rect.x <= -1000 || rect.y <= -1000);
+  if (lock) {
+    const notice = document.createElement('div');
+    notice.className = 'warnbox';
+    notice.innerHTML = '<span class="lock">&#128274; LOCKED</span> ' + escapeHtml(lock.reason) +
+      (lock.close ? ' The `close` control keeps the `upper_right` orientation and its place as the window\'s LAST direct child.' : '') +
+      '<br>The server refuses a delete or a rename of this element, and says why.';
+    host.appendChild(notice);
+  }
+  if (parkedHere) {
+    const notice = document.createElement('div');
+    notice.className = 'warnbox';
+    notice.innerHTML = '<b>Parked on purpose.</b> At ' + rect.x + ',' + rect.y + ' with a zero size this element draws ' +
+      'nothing while keeping the name the engine looks up. Leaving it alone is the correct edit; deleting it breaks the ' +
+      'window contract, and a `shortcut` here would bind a key to an invisible control (the server refuses that).';
+    host.appendChild(notice);
+  }
+
+  field('name', node.name, (value) => edit([{ op: 'rename', target: node.id || node.name, name: value }])).disabled = Boolean(lock);
+  field('kind', node.kind, () => {}, 'text').disabled = true;
+  field('id', node.id, () => {}).disabled = true;
+  if (lock) {
+    const nameNote = document.createElement('div');
+    nameNote.className = 'hint';
+    nameNote.textContent = 'The name field is disabled: this name is part of the engine\'s by-name contract. Renaming it is refused server-side as well.';
+    host.appendChild(nameNote);
+  }
+
+  const position = node.position || {};
+  const posRow = document.createElement('div');
+  posRow.className = 'grid2';
+  for (const axis of ['x', 'y']) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = '<label class="hint">position.' + axis + ' (canonical)</label>';
+    const input = document.createElement('input');
+    input.value = position[axis] === undefined ? 0 : position[axis];
+    input.onchange = () => edit([{ op: 'set', target: node.id || node.name, path: 'position.' + axis, value: input.value }]);
+    wrap.appendChild(input);
+    posRow.appendChild(wrap);
+  }
+  host.appendChild(posRow);
+  const posNote = document.createElement('div');
+  posNote.className = 'hint';
+  posNote.textContent =
+    'Canonical coordinates: origin at the window/s parent top-left, +x right, +y down, and `position` is the offset of this element\'s pivot from the parent\'s `orientation` anchor - the SAME meaning for every orientation. The emitter converts it into the engine\'s own fields, including the sign flip a lower_* anchor needs.';
+  host.appendChild(posNote);
+
+  const size = node.size || {};
+  const sizeRow = document.createElement('div');
+  sizeRow.className = 'grid2';
+  for (const axis of ['width', 'height']) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = '<label class="hint">size.' + axis + '</label>';
+    const input = document.createElement('input');
+    input.value = size[axis] === undefined ? '' : size[axis];
+    input.placeholder = 'N, N%, N%% or -N';
+    input.onchange = () => edit([{ op: 'set', target: node.id || node.name, path: 'size.' + axis, value: input.value }]);
+    wrap.appendChild(input);
+    sizeRow.appendChild(wrap);
+  }
+  host.appendChild(sizeRow);
+
+  const sizeHint = document.createElement('div');
+  sizeHint.className = 'hint';
+  sizeHint.textContent = 'size forms: N = pixels, N% = of parent, N%% = of parent minus position, -N = parent minus position minus N.';
+  host.appendChild(sizeHint);
+
+  select('orientation', Object.keys(ANCHORS), node.orientation || 'upper_left',
+    (value) => edit([{ op: 'set', target: node.id || node.name, path: 'orientation', value }]));
+  select('origo', Object.keys(ANCHORS), node.origo || 'upper_left',
+    (value) => edit([{ op: 'set', target: node.id || node.name, path: 'origo', value }]));
+
+  field('spriteType', node.spriteType, (value) => edit([{ op: 'set', target: node.id || node.name, path: 'spriteType', value }]));
+  field('quadTextureSprite', node.quadTextureSprite, (value) => edit([{ op: 'set', target: node.id || node.name, path: 'quadTextureSprite', value }]));
+  field('background sprite', node.background && node.background.sprite, (value) =>
+    edit([{ op: 'set', target: node.id || node.name, path: 'background.sprite', value }]));
+  field('text / buttonText', node.text || node.buttonText, (value) => edit([{ op: 'set', target: node.id || node.name, path: 'text', value }]));
+  field('font', node.font || node.buttonFont, (value) => edit([{ op: 'set', target: node.id || node.name, path: node.kind === 'text' ? 'font' : 'buttonFont', value }]));
+  field('effect (button_effects key)', node.effect, (value) => edit([{ op: 'set', target: node.id || node.name, path: 'effect', value }]));
+  field('pdx_tooltip', node.pdx_tooltip, (value) => edit([{ op: 'set', target: node.id || node.name, path: 'pdx_tooltip', value }]));
+  field('shortCut (key binding)', node.shortCut || node.shortcut,
+    (value) => edit([{ op: 'set', target: node.id || node.name, path: 'shortCut', value }]));
+
+  // `effect` is a field of `effectbuttonType` ONLY. On a `buttonType` the engine answers
+  // "Unexpected token: effect" and the button renders and does nothing - a silent no-op that looks
+  // like a working control. The field is therefore disabled on a plain button, with the fix named.
+  const effectField = host.querySelector('input[data-field="effect"]');
+  if (effectField && node.kind !== 'effectbutton' && (node.kind === 'button' || node.kind === 'guiButton')) {
+    effectField.disabled = true;
+    const note = document.createElement('div');
+    note.className = 'hint';
+    note.textContent = '`effect` is disabled: it is not a field of `' + node.kind + '` (the engine answers "Unexpected token: effect"). ' +
+      'A control that needs script must be an `effectbuttonType` - change the emitted kind there, not the field here.';
+    effectField.parentElement.appendChild(note);
+  }
+  // A shortcut on a parked element binds a key to an invisible control. Measured on this project's
+  // own trial mod, that is exactly how the ESC key ended up pressing a button 3000px off-screen.
+  const shortcutField = host.querySelector('input[data-field="shortcut"]');
+  if (shortcutField && parkedHere) {
+    shortcutField.disabled = true;
+    shortcutField.placeholder = 'refused on a parked element';
+  }
+
+  const flags = document.createElement('div');
+  flags.className = 'grid2';
+  for (const flag of ['alwaysTransparent', 'clipping', 'moveable', 'fixedSize', 'multiline']) {
+    const label = document.createElement('label');
+    label.className = 'hint';
+    label.style.display = 'flex'; label.style.gap = '6px'; label.style.alignItems = 'center';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.style.width = 'auto';
+    input.checked = node[flag] === true || node[flag] === 'yes';
+    input.onchange = () => edit([{ op: 'set', target: node.id || node.name, path: flag, value: input.checked }]);
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(flag));
+    flags.appendChild(label);
+  }
+  host.appendChild(flags);
+
+  const growth = document.createElement('div');
+  growth.className = 'grid2';
+  for (const axis of ['maxWidth', 'maxHeight', 'dynamic_extra_height']) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = '<label class="hint">' + axis + '</label>';
+    const input = document.createElement('input');
+    input.value = node[axis] === undefined ? '' : node[axis];
+    input.onchange = () => edit([{ op: 'set', target: node.id || node.name, path: axis, value: input.value }]);
+    wrap.appendChild(input);
+    growth.appendChild(wrap);
+  }
+  host.appendChild(growth);
+
+  if (node.effect && state.state && state.state.assetIndex) {
+    const note = document.createElement('div');
+    note.className = 'hint';
+    note.textContent = 'The `effect` key must exist in common/button_effects/*.txt; Export will emit one for it.';
+    host.appendChild(note);
+  }
+}
+
+// ---------------------------------------------------------------------------- edits
+async function edit(edits) {
+  status('applying...');
+  try {
+    const data = await post('/api/edit', { id: state.id, edits });
+    // A refused edit is not applied at all: the server returns the UNCHANGED tree together with
+    // the reasons, so the canvas can never drift from the model. The reasons are shown first,
+    // because a silent "nothing happened" is the one outcome a human cannot act on.
+    if (data.refused && data.refused.length) {
+      renderRefusals(data.refused);
+      status('REFUSED: ' + data.refused.map((entry) => entry.rule).join(', '));
+    } else {
+      clearRefusals();
+      status(data.failed && data.failed.length ? data.failed.length + ' edit(s) failed' : 'ok');
+    }
+    state.layout = data.layout;
+    state.rects = data.rects;
+    state.locks = new Map((data.locks || []).map((entry) => [entry.path, entry]));
+    state.customGuiWindows = data.customGuiWindows || [];
+    state.change = data.change || null;
+    if (data.guardrailViolations && data.guardrailViolations.introducedHard && data.guardrailViolations.introducedHard.length) {
+      renderGuardrailFindings(data.guardrailViolations);
+      status('WARNING: this edit introduced ' + data.guardrailViolations.introducedHard.length + ' contract finding(s)');
+    } else if (data.guardrailViolations && data.guardrailViolations.summary && !data.guardrailViolations.clear) {
+      renderGuardrailFindings(data.guardrailViolations);
+    }
+    if (!elements().some((entry) => entry.path === state.selected)) {
+      state.selected = data.elements.length ? data.elements[0].path : null;
+    }
+    renderAll();
+    renderChangePanel();
+    renderLockSummary();
+  } catch (thrown) {
+    status('error: ' + thrown.message);
+  }
+}
+
+/** Refusals and introduced findings, in one place at the top of the right column. */
+function renderRefusals(refused) {
+  const host = $('validation');
+  const box = document.createElement('div');
+  box.id = 'refusal-box';
+  box.className = 'refusal';
+  box.innerHTML = '<div class="rule">REFUSED by the guardrails - nothing was changed</div>' +
+    refused.map((entry) =>
+      '<div style="margin-top:6px"><b>' + escapeHtml(entry.rule) + '</b> &mdash; ' + escapeHtml(entry.message) +
+      (entry.suggestedFix ? '<div class="fix">do this instead: ' + escapeHtml(entry.suggestedFix) + '</div>' : '') + '</div>').join('');
+  const existing = $('refusal-box');
+  if (existing) existing.remove();
+  host.prepend(box);
+  $('validation').scrollIntoView({ block: 'nearest' });
+}
+
+function renderGuardrailFindings(violations) {
+  const host = $('validation');
+  const existing = $('guardrail-box');
+  if (existing) existing.remove();
+  const box = document.createElement('div');
+  box.id = 'guardrail-box';
+  box.className = 'refusal';
+  const hard = violations.introducedHard || [];
+  const soft = violations.introducedSoft || [];
+  box.innerHTML = '<div class="rule">' +
+    (hard.length ? 'THIS EDIT INTRODUCED ' + hard.length + ' CONTRACT FINDING(S)' : 'This edit introduced ' + soft.length + ' flagged finding(s)') +
+    '</div>' + escapeHtml(violations.summary || '') +
+    [...hard, ...soft].map((finding) =>
+      '<div style="margin-top:6px"><b>' + escapeHtml(finding.rule) + '</b> ' + escapeHtml(finding.path || '') +
+      '<div>' + escapeHtml(finding.message) + '</div>' +
+      (finding.suggestedFix ? '<div class="fix">fix: ' + escapeHtml(finding.suggestedFix) + '</div>' : '') + '</div>').join('') +
+    (hard.length ? '<div style="margin-top:6px">A hand-edited window must not ship a crash class: undo this, or park the element instead of removing it.</div>' : '');
+  host.prepend(box);
+}
+
+function clearRefusals() {
+  const existing = $('refusal-box');
+  if (existing) existing.remove();
+}
+
+// ---------------------------------------------------------------------------- changes / diff
+function renderChangePanel() {
+  const change = state.change;
+  const summary = $('change-summary');
+  const list = $('change-list');
+  const markdown = $('change-md');
+  list.innerHTML = '';
+  markdown.textContent = '';
+  if (!change || !change.comparedWith) {
+    summary.textContent = 'No earlier revision of this layout is held in this process, so there is nothing to compare against yet.';
+    return;
+  }
+  const counts = Object.entries(change.counts || {}).map(([key, value]) => value + ' ' + key).join(', ');
+  summary.innerHTML = (change.unchanged ? '<b>no changes</b> since ' : '<b>' + change.changeCount + ' change(s)</b> since ') +
+    escapeHtml(change.comparedWith.id) + (counts ? ' &mdash; ' + escapeHtml(counts) : '');
+  if (change.unchanged) return;
+  for (const entry of (change.changes || []).slice(0, 200)) {
+    const div = document.createElement('div');
+    div.className = 'submission';
+    div.textContent = entry.summary;
+    div.style.cursor = 'pointer';
+    div.onclick = () => { state.selected = entry.path; renderTree(); renderCanvas(); renderProps(); };
+    list.appendChild(div);
+  }
+  loadChangeMarkdown();
+}
+
+async function loadChangeMarkdown() {
+  try {
+    const data = await api('/api/diff?id=' + encodeURIComponent(state.id));
+    $('change-md').textContent = data.markdown || '(no diff markdown)';
+  } catch (thrown) {
+    $('change-md').textContent = 'diff unavailable: ' + thrown.message;
+  }
+}
+
+// ---------------------------------------------------------------------------- handoff
+async function submitHandoff() {
+  status('submitting to the agent...');
+  const out = $('handoff-out');
+  out.textContent = 'writing the submission...';
+  try {
+    const data = await post('/api/handoff/submit', {
+      id: state.id,
+      note: $('submit-note').value.trim() || undefined,
+    });
+    const record = data.handoff;
+    out.innerHTML =
+      (record.invalid
+        ? '<b style="color:#ff8b82">SUBMITTED, MARKED INVALID</b>'
+        : record.flagged
+          ? '<b style="color:#ffb020">SUBMITTED (flagged)</b>'
+          : '<b style="color:#46d17a">Submitted</b>') +
+      '<br>id <code>' + escapeHtml(record.id) + '</code> at ' + escapeHtml(record.createdAt) + '<br>' +
+      'verdict: <b>' + escapeHtml(record.validation && record.validation.verdict || 'unvalidated') + '</b>' +
+      (record.validation && record.validation.counts
+        ? ' (' + record.validation.counts.error + ' errors, ' + record.validation.counts.warning + ' warnings)'
+        : '') + '<br>' +
+      'diff: ' + escapeHtml(record.diff && record.diff.summary || 'no changes') + '<br>' +
+      'files: ' + escapeHtml(record.directory) + '<br>' +
+      'emitted: ' + ((record.files && record.files.emitted) || []).length + ' file(s)' +
+      (record.emitError ? '<br><span style="color:#ff8b82">emit failed: ' + escapeHtml(record.emitError) + '</span>' : '') +
+      '<br><br>Tell the agent to run <code>gui_handoff_list</code>, then <code>gui_handoff_pick</code> with this id.';
+    status('submitted ' + record.id);
+    if (record.validation && record.validation.verdict === 'fail') {
+      $('validation').innerHTML = '<div class="refusal"><div class="rule">SUBMITTED AS INVALID</div>' +
+        'The validator returned FAIL, and the submission carries that verdict: the agent sees it before using the layout as ' +
+        'a baseline. Read the finding list below and fix it, then submit again.</div>';
+    }
+    await refreshPending();
+    await runValidation();
+  } catch (thrown) {
+    out.textContent = 'submit failed: ' + thrown.message;
+    status('submit failed');
+  }
+}
+
+function renderPending(handoff) {
+  const badge = $('pending-badge');
+  const count = handoff ? handoff.pendingCount : 0;
+  state.pendingCount = count;
+  badge.textContent = 'pending: ' + count;
+  badge.className = count > 0 ? 'ready' : '';
+  badge.title = count > 0
+    ? count + ' submission(s) no agent has picked up yet. Click to refresh the list.'
+    : 'No submission is waiting for the agent.';
+  renderHandoffList(handoff && handoff.submissions);
+}
+
+async function refreshPending() {
+  const data = await api('/api/handoff/pending?limit=20');
+  renderPending({ pendingCount: data.pendingCount, totalCount: data.totalCount, invalidCount: data.invalidCount, submissions: data.handoffs });
+}
+
+function renderHandoffList(submissions) {
+  const host = $('handoff-list');
+  host.innerHTML = '';
+  if (!submissions || !submissions.length) {
+    host.innerHTML = '<div class="hint">No pending submission.</div>';
+    return;
+  }
+  for (const entry of submissions) {
+    const div = document.createElement('div');
+    div.className = 'submission' + (entry.invalid ? ' invalid' : entry.flagged ? ' flagged' : '');
+    div.innerHTML = '<b>' + escapeHtml(entry.id) + '</b> <span class="pill">' +
+      escapeHtml(entry.verdict || 'unvalidated') + '</span>' +
+      (entry.invalid ? ' <span class="pill" style="background:#4a1f1f;color:#ff8b82">INVALID</span>' : '') +
+      '<br>' + escapeHtml(entry.diffSummary || 'no changes') +
+      '<br><span class="hint">' + escapeHtml(entry.submittedBy || '') + ' @ ' + escapeHtml(entry.createdAt) + '</span>';
+    host.appendChild(div);
+  }
+}
+
+// ---------------------------------------------------------------------------- assets
+async function searchAssets(query) {
+  status('searching assets...');
+  try {
+    const data = await api('/api/assets?q=' + encodeURIComponent(query) + '&limit=40');
+    const host = $('results');
+    host.innerHTML = '';
+    if (!data.results.length) { host.innerHTML = '<div class="hint">no sprites matched</div>'; status('0 results'); return; }
+    for (const sprite of data.results) {
+      const row = document.createElement('div');
+      row.className = 'asset';
+      const hasTexture = sprite.width !== null && sprite.format;
+      row.innerHTML =
+        (hasTexture
+          ? '<img loading="lazy" src="/api/thumb?name=' + encodeURIComponent(sprite.name) + '&size=48" alt="">'
+          : '<div class="ph">' + escapeHtml(String(sprite.kind).slice(0, 4)) + '</div>') +
+        '<div class="meta"><div class="nm">' + escapeHtml(sprite.name) + '</div>' +
+        '<div class="sz">' + escapeHtml(sprite.kind) + '  ' +
+        (sprite.width ? sprite.width + 'x' + sprite.height : 'size unknown') +
+        (sprite.format ? '  ' + sprite.format : '') + '</div></div>';
+      row.title = sprite.textureFile || '(no texture)';
+      row.onclick = () => assignSprite(sprite);
+      host.appendChild(row);
+    }
+    status(data.count + ' results');
+  } catch (thrown) {
+    status('asset search failed: ' + thrown.message);
+  }
+}
+
+async function assignSprite(sprite) {
+  const entry = elements().find((item) => item.path === state.selected);
+  if (!entry) { status('select an element first'); return; }
+  const node = entry.node;
+  // Match the field to the sprite kind: a resizable cornered tile can drive a button/container
+  // background via quadTextureSprite, while a fixed-size spriteType must stay a spriteType.
+  const field = /cornered|tile/i.test(sprite.kind) ? 'quadTextureSprite' : 'spriteType';
+  const target = node.id || node.name;
+  const edits = [{ op: 'set', target, path: field, value: sprite.name }];
+  if (entry.depth === 0 || node.kind === 'container') {
+    edits.push({ op: 'set', target, path: 'background.sprite', value: sprite.name });
+  }
+  const form = sizeFormOf(node);
+  const hasSize = form === 'maxWidth/maxHeight'
+    ? node.maxWidth !== undefined || node.maxHeight !== undefined
+    : Boolean(node.size && node.size.width !== undefined);
+  if (sprite.width && sprite.height && !hasSize) {
+    if (form === 'maxWidth/maxHeight') {
+      edits.push({ op: 'set', target, path: 'maxWidth/maxHeight', value: { width: sprite.width, height: sprite.height } });
+    } else if (form !== 'none') {
+      edits.push({ op: 'set', target, path: 'size', value: { width: sprite.width, height: sprite.height } });
+    }
+  }
+  await edit(edits);
+}
+
+async function showDefaults() {
+  const data = await api('/api/state');
+  const host = $('results');
+  host.innerHTML = '';
+  const defaults = data.defaults;
+  if (!defaults) { host.innerHTML = '<div class="hint">asset index not loaded</div>'; return; }
+  for (const sprite of defaults.sprites) {
+    const row = document.createElement('div');
+    row.className = 'asset';
+    row.innerHTML = (sprite.present
+      ? '<img loading="lazy" src="/api/thumb?name=' + encodeURIComponent(sprite.name) + '&size=48" alt="">'
+      : '<div class="ph">?</div>') +
+      '<div class="meta"><div class="nm">' + escapeHtml(sprite.name) + '</div><div class="sz">' +
+      escapeHtml(sprite.kind || 'missing') + '  ' + (sprite.width ? sprite.width + 'x' + sprite.height : '') + '</div></div>';
+    row.onclick = () => assignSprite({ ...sprite, kind: sprite.kind || 'spriteType' });
+    host.appendChild(row);
+  }
+  for (const font of defaults.fonts) {
+    const row = document.createElement('div');
+    row.className = 'asset';
+    row.innerHTML = '<div class="ph">Aa</div><div class="meta"><div class="nm">' + escapeHtml(font.name) +
+      '</div><div class="sz">font' + (font.file ? '  ' + font.file : '') + '</div></div>';
+    row.onclick = () => {
+      const entry = elements().find((item) => item.path === state.selected);
+      if (!entry) { status('select an element first'); return; }
+      edit([{ op: 'set', target: entry.node.id || entry.node.name, path: entry.node.kind === 'text' ? 'font' : 'buttonFont', value: font.name }]);
+    };
+    host.appendChild(row);
+  }
+  status('default parts');
+}
+
+// ---------------------------------------------------------------------------- validate
+async function runValidation() {
+  status('validating...');
+  try {
+    const report = await post('/api/validate', { id: state.id });
+    state.findings = report.findings;
+    const host = $('validation');
+    const hard = (report.guardrails && report.guardrails.hard) || [];
+    const soft = (report.guardrails && report.guardrails.soft) || [];
+    host.innerHTML =
+      '<div class="verdict ' + report.verdict + '">' + report.verdict.toUpperCase() + '</div>' +
+      '<div class="hint">' + report.counts.error + ' errors, ' + report.counts.warning + ' warnings, ' +
+      report.counts.info + ' info  |  base ' + report.baseResolution.width + 'x' + report.baseResolution.height + '</div>' +
+      '<div class="hint">' + escapeHtml(report.geometryAssumption) + '</div>' +
+      (hard.length || soft.length
+        ? '<div class="refusal"><div class="rule">GUARDRAIL: ' + hard.length + ' hard, ' + soft.length + ' flagged</div>' +
+          'A hard finding is a crash class the engine dereferences by name. This hand-off must not ship with one.' +
+          [...hard, ...soft].map((finding) => '<div style="margin-top:5px"><b>' + escapeHtml(finding.rule) + '</b> ' +
+            escapeHtml(finding.path || '') + '<div>' + escapeHtml(finding.message) + '</div></div>').join('') +
+          '</div>'
+        : '<div class="hint">No contract, parked-element or field guardrail finding.</div>') +
+      '<div class="hint">custom_gui windows in this layout: ' + escapeHtml((report.customGuiWindows || []).join(', ') || '(none)') + '</div>';
+    for (const finding of report.findings) {
+      const div = document.createElement('div');
+      div.className = 'finding ' + finding.severity;
+      div.innerHTML = '<div class="rule">' + escapeHtml(finding.rule) + ' <span class="pill">' + finding.severity + '</span></div>' +
+        '<div>' + escapeHtml(finding.message) + '</div>' +
+        (finding.path ? '<div class="hint">' + escapeHtml(finding.path) + '</div>' : '') +
+        (finding.suggestedFix ? '<div class="fix">fix: ' + escapeHtml(finding.suggestedFix) + '</div>' : '');
+      if (finding.path) {
+        div.style.cursor = 'pointer';
+        div.onclick = () => { state.selected = finding.path; renderTree(); renderCanvas(); renderProps(); };
+      }
+      host.appendChild(div);
+    }
+    renderCanvas(); // redraw with the finding overlay
+    status(report.verdict);
+  } catch (thrown) {
+    status('validation failed: ' + thrown.message);
+  }
+}
+
+// ---------------------------------------------------------------------------- export
+async function doExport() {
+  const root = $('export-root').value.trim();
+  if (!root) { $('export-out').textContent = 'Enter an absolute output path first.'; return; }
+  status('exporting...');
+  try {
+    const result = await post('/api/export', {
+      id: state.id,
+      output_root: root,
+      file_stem: $('export-stem').value.trim() || undefined,
+      language: $('export-lang').value,
+      diplomatic: $('export-diplomatic').checked,
+    });
+    $('export-out').innerHTML = 'Wrote ' + result.files.length + ' file(s) under ' + escapeHtml(result.outputRoot) + ':<br>' +
+      result.files.map((file) => escapeHtml(file.path) + ' <span class="hint">(' + file.bytes + ' B' +
+        (file.bom ? ', BOM' : '') + ')</span>').join('<br>');
+    status('exported');
+  } catch (thrown) {
+    $('export-out').textContent = 'Export failed: ' + thrown.message;
+    status('export failed');
+  }
+}
+
+// ---------------------------------------------------------------------------- misc
+function escapeHtml(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function short(value, max) {
+  const text = String(value);
+  return text.length > max ? '...' + text.slice(-(max - 3)) : text;
+}
+
+// ---------------------------------------------------------------------------- wiring
+$('btn-validate').onclick = runValidation;
+$('btn-export').onclick = () => { $('export-root').focus(); };
+$('btn-export-2').onclick = doExport;
+$('btn-submit').onclick = submitHandoff;
+$('pending-badge').onclick = () => { refreshPending().catch((thrown) => status('pending check failed: ' + thrown.message)); };
+$('show-changes').onchange = (event) => { state.showChanges = event.target.checked; renderCanvas(); };
+$('btn-fill').onclick = () => {
+  const wrap = $('canvas-wrap');
+  state.zoom = Math.min((wrap.clientWidth - 30) / CANVAS.w, (wrap.clientHeight - 90) / CANVAS.h);
+  renderCanvas();
+};
+$('btn-add-container').onclick = () => addElement('container', 'container');
+$('btn-add-text').onclick = () => addElement('text', 'instantTextBoxType');
+$('btn-add-button').onclick = () => addElement('button', 'buttonType');
+$('btn-delete').onclick = async () => {
+  if (!state.selected) { status('nothing selected'); return; }
+  // The delete button is disabled (not merely refused) when the selected element is locked, so the
+  // guardrail is visible BEFORE the gesture. The refusal still exists server-side - this is the
+  // convenience, that one is the guarantee.
+  const lock = state.locks.get(state.selected);
+  if (lock) {
+    renderRefusals([{
+      rule: 'handoff-protected-remove',
+      message: '`' + lock.name + '` is a contract element of `' + lock.window + '` and cannot be deleted. ' + lock.reason + '.',
+      suggestedFix: 'park it instead of deleting it: set `position = { x = -3000 y = -3000 }` and a zero size, which keeps the name the engine looks up while drawing nothing.',
+    }]);
+    status('refused: ' + lock.name + ' is protected');
+    return;
+  }
+  await edit([{ op: 'remove', target: state.selected.split('/').pop() }]);
+};
+$('asset-go').onclick = () => searchAssets($('asset-q').value);
+$('asset-defaults').onclick = showDefaults;
+$('asset-q').onkeydown = (event) => { if (event.key === 'Enter') searchAssets($('asset-q').value); };
+
+async function addElement(kind, label) {
+  const parent = state.selected && state.selected.includes('/')
+    ? state.selected.split('/').slice(0, -1).join('/')
+    : (state.selected || state.layout.root.name);
+  const base = label + '_' + Math.floor(Math.random() * 900 + 100);
+  const node = {
+    id: base, kind, name: base,
+    position: { x: 20, y: 20 },
+    size: { width: 160, height: 30 },
+    ...(kind === 'text' ? { font: 'cg_16b', text: base + '_text', maxWidth: 200, format: 'left' } : {}),
+    ...(kind === 'button' ? { font: 'cg_16b', text: base + '_label', quadTextureSprite: 'GFX_tiling_button_standard' } : {}),
+  };
+  await edit([{ op: 'add', parent: parent || state.layout.root.name, node }]);
+  state.selected = null;
+}
+
+$('win-name').onchange = (event) => edit([{ op: 'rename', target: state.layout.root.id || state.layout.root.name, name: event.target.value }]);
+$('win-width').onchange = (event) => edit([{ op: 'set', target: state.layout.root.id || state.layout.root.name, path: 'size.width', value: event.target.value }]);
+$('win-height').onchange = (event) => edit([{ op: 'set', target: state.layout.root.id || state.layout.root.name, path: 'size.height', value: event.target.value }]);
+
+// Collapsible sections.
+for (const heading of document.querySelectorAll('section > h2')) {
+  heading.onclick = () => {
+    const body = heading.nextElementSibling;
+    if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+  };
+}
+
+boot().catch((thrown) => {
+  status('failed to load: ' + thrown.message);
+  console.error(thrown);
+});
+</script>
+</body>
+</html>

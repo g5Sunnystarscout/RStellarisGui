@@ -1,0 +1,26 @@
+# Caches and generated output
+.cache/
+out/
+.selftest/
+.protocol-test/
+
+# Nothing here is build output; the project has no build step.
+node_modules/
+*.log
+
+# Editor and OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# NOTE on the knowledge build products. `scripts/build-knowledge.mjs` WRITES
+# `resources/knowledge/stellaris/**` (TOML, derived from the hand-written `knowledge/*.md`) and
+# `src/generated/knowledge.mjs` (the snapshot the server embeds). They are TRACKED, not ignored:
+# this project has no build step, `npx rstellarisgui` / `node src/index.mjs` runs the sources
+# directly, and `package.json` ships `src` and `resources`. An ignored `src/generated/knowledge.mjs`
+# would make a fresh clone a server with NO KNOWLEDGE BASE until someone ran the build - and a clone
+# that does not work is worse than a generated file in the repository. `node scripts/build-knowledge.mjs`
+# regenerates both deterministically, and `scripts/selftest.mjs` fails if either is stale.
+# The sibling RStellarisScribe cites this same reasoning in its own .gitignore; the two must agree.
+

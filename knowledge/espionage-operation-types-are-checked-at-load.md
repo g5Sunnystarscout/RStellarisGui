@@ -1,0 +1,255 @@
+---
+id: espionage-operation-types-are-checked-at-load
+category: script
+title: The engine validates `common/espionage_operation_types/` AT LOAD and names your key - stage count, `on_roll_failed`, and stage events
+title_zh: 引擎在加载期校验 `common/espionage_operation_types/`，会点名你的 key——阶段数、`on_roll_failed`、阶段事件
+summary: `common/espionage_operation_types/*.txt` is one of the few data schemas in this install whose load-time validation the engine actually prints. Two messages were read verbatim in game - "Espionage operation '%s' does not have the expected number of stages." and "Espionage operation '%s' has no on_roll_failed, operation will never progress" - and two more exist in the exe untriggered ("Invalid event '%s'", "Invalid event type for event '%s'. Expected: %s, actual: %s"). So the stage count versus the declared `stages`, the presence of `on_roll_failed` and the existence and type of each stage's `event` are all checkable from the files, and `gui_check_files` now checks the first two as errors and the third as a warning. The engine validates the same system a SECOND time, at FIRE time, on the event type itself: firing an `espionage_operation_event` from the console is refused verbatim with `Event fired on wrong scope. Got country, expected espionage_operation` - so the engine has and enforces an `espionage_operation` scope, which is also why the console cannot be used to test what such an event draws.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.txt]
+tags: [espionage, operations, load-time-validation, fire-time-scope, espionage_operation_type, stages, on_roll_failed, event-type, file-check-files, engine-message]
+related: [dlc-panels-are-engine-views, per-kind-size-and-field-forms, engine-capability-vs-usage, control-visibility-is-a-potential]
+sources: [<clone>/unga-fix/DOORS-RESULTS.md, <clone>/unga-fix/dlc-gui/espionage.md, <Stellaris>/common/espionage_operation_types, <Stellaris>/stellaris.exe, <Stellaris>/events/nemesis_operations_events_1.txt]
+---
+
+## What it is
+
+The espionage system's content door is `common/espionage_operation_types/*.txt` - a mod adds an
+operation there and the engine fills `operations_grid` itself, with no `.gui` edit
+(`dlc-panels-are-engine-views`). Unlike most of those schemas, this one **talks back at load time**.
+The wave's probe mod shipped one deliberately under-defined operation next to a good one and the
+engine answered with its own two messages, at file load, on the main menu, before any game state
+existed:
+
+```
+[08:47:42][espionage_operation_type.cpp:407]: Espionage operation 'probe_doors_e_bad_operation' does not have the expected number of stages.
+[08:47:42][espionage_operation_type.cpp:529]: Espionage operation 'probe_doors_e_bad_operation' has no on_roll_failed, operation will never progress
+```
+
+The probe's operation declared `stages = 2` and defined no `stage` block at all, and the engine named
+both faults in the same second. Two more messages exist in `stellaris.exe` and were NOT triggered by
+that probe, because a valid operation never reaches them:
+
+```
+%s espionage operation stage #%i: Invalid event '%s'
+%s espionage operation stage #%i: Invalid event type for event '%s'. Expected: %s, actual: %s
+```
+
+So the schema's own documentation is executable: `common/espionage_operation_types/example.txt` and
+`operations.txt:1-16` state the contract (`stages = <int> # Should match number of defined stages
+below.`, `stage = { difficulty icon event }`, `on_roll_failed = <effect> # Effect to fire when a roll
+fails`), and the engine enforces the first two of them with a message that names the key.
+
+**The same system is validated a SECOND time, at FIRE time, on the event type.** A human tried to fire
+the wave's probe event from the debug console - `event probe_doors_e.1` - and the engine refused it
+verbatim:
+
+```
+Event fired on wrong scope. Got country, expected espionage_operation
+```
+
+That is a positive finding about the engine, not a failed experiment. The console runs in **country**
+scope, and an `espionage_operation_event` may only be fired in an **`espionage_operation`** scope, which
+the engine **checks at fire time** - matching the effect documentation's own
+`Supported Scopes: espionage_operation` (`effects.log:2371-2378`). Two consequences:
+
+* **The routine "fire it from the console and look" test DOES NOT WORK for this event type.** The only
+  way to see what an `espionage_operation_event` draws is to start a real operation - a spy network
+  (Nemesis), or an effect that creates one, if such an effect exists.
+* The engine's validation of this system has a load-time half (the `espionage_operation_type.cpp`
+  messages above, about the DEFINITION) and a fire-time half (this one, about the SCOPE of the event
+  INSTANCE). Both name the fault and neither is silent.
+
+**What the wave's Door E therefore measured, in one line:** `custom_gui` on an `espionage_operation_event`
+is **accepted at load and not resolved** (zero complaints, including for a window that does not exist),
+its block **is** read and validated (the same block's deliberately bogus field was reported at its own
+line), and **whether the window is really substituted at run time stays UNPROVEN** because the console is
+the one route that cannot reach the event. `DOORS-RESULTS.md` sections 6.3 and 12.3.
+
+**What the checker does about it.** `gui_check_files` (and therefore every path that reports on a
+mod's files) now reads a file under `common/espionage_operation_types/` as an operation-type schema
+rather than as a `button_effects` file with a generic shape:
+
+| rule id | what it checks | severity | engine message it stands for |
+| --- | --- | --- | --- |
+| `espionage-operation-stage-count` | the number of `stage = { }` blocks equals the declared `stages`; a MISSING `stages` is reported too, because the engine has nothing to compare against and the operation's chapter count is then engine-defaulted | error | `Espionage operation '<key>' does not have the expected number of stages.` |
+| `espionage-operation-no-on-roll-failed` | the operation declares `on_roll_failed` | error | `Espionage operation '<key>' has no on_roll_failed, operation will never progress` |
+| `espionage-operation-stage-event-unresolved` | every stage's `event = <id>` is among the events indexed from the files passed alongside; **only fires when at least one event file was actually read**, because "names an event I could not see" and "names no event" are different answers | warning | `... Invalid event '<id>'` |
+
+## Syntax
+
+```
+# common/espionage_operation_types/<yours>.txt - the shape the engine validates at load.
+# Field table: common/espionage_operation_types/operations.txt:1-16 (verbatim from the install).
+
+my_operation = {
+	target = none                    # country | megastructure | starbase | fleet | army | pop_faction
+	                                 # | spynetwork | federation | none
+	categories = { op_cat_subterfuge }   # from common/espionage_operation_categories/
+	picture = GFX_evt_spymaster
+	desc = my_operation_desc         # or desc = { trigger = { ... } text = <key> } branches
+	stages = 2                       # MUST equal the number of `stage` blocks below.
+	                                 #   engine: "does not have the expected number of stages."
+	potential = { has_nemesis = yes }    # who may see it - this is where a DLC gate belongs
+	allow = { is_running_espionage_operation = no }
+
+	stage = {                        # stage #0 - order dependent
+		difficulty = @diff_t0
+		icon = GFX_espionage_chapter_icon_document
+		event = my_operation.1       # a real event id, or the engine says "Invalid event"
+	}
+	stage = {                        # stage #1 - one per declared stage
+		difficulty = @diff_t1
+		icon = GFX_espionage_chapter_icon_document
+		event = my_operation.2
+	}
+
+	on_roll_failed = {               # REQUIRED: without it the engine warns the operation
+		my_failed_effect = { }       #   "has no on_roll_failed, operation will never progress"
+	}
+	on_create = { }                  # optional
+
+	resources = { category = operations cost = { influence = 20 } upkeep = { energy = 4 } }
+	spy_power_cost = 10
+}
+
+# The stage event itself is a SPECIALISED type - not a country_event:
+espionage_operation_event = {
+	id = my_operation.1
+	espionage_operation = yes        # the marker that routes it into the operation view
+	title = my_operation.1.name
+	desc = my_operation.1.desc
+	option = { name = ACKNOWLEDGED }
+}
+
+# static-check report on a file like the above, from gui_check_files:
+#   espionage-operation-stage-count          error   declares `stages = 2` but defines 1 `stage` block
+#   espionage-operation-no-on-roll-failed   error   no `on_roll_failed` block
+#   espionage-operation-stage-event-unresolved warning  `event = my_operation.9` is not among the events read
+```
+
+## Evidence
+
+- `log`, **the engine's own two operation-type messages, verbatim, in game**: `DOORS-RESULTS.md`
+  section 6.2 - `[08:47:42][espionage_operation_type.cpp:407]: Espionage operation
+  'probe_doors_e_bad_operation' does not have the expected number of stages.` and
+  `[08:47:42][espionage_operation_type.cpp:529]: Espionage operation 'probe_doors_e_bad_operation' has
+  no on_roll_failed, operation will never progress`, from a probe operation that declared `stages = 2`
+  and defined no stage block and no `on_roll_failed`. The same run's positive control -
+  `Unexpected token: custom_gui_probeZZ_doors_e_unknown_field ... in file:
+  "events/zz_gui_probe_doors_e_events.txt" near line: 28` - proves the engine was reading and
+  validating that mod's files rather than staying silent.
+- `log`, **and the FIRE-time half, verbatim from the user's console session** (`DOORS-RESULTS.md`
+  section 12.3): `event probe_doors_e.1` was refused with
+  `Event fired on wrong scope. Got country, expected espionage_operation`. The console's scope is
+  `country`, the event type requires `espionage_operation`, and the engine therefore HAS that scope type
+  and checks it at fire time. That matches the effect documentation's
+  `Supported Scopes: espionage_operation` for the effect that triggers such events
+  (`effects.log:2371-2378`). It is labelled separately from the four probe runs' archived logs because
+  those runs stopped at the main menu (`DOORS-RESULTS.md` section 7): the console line comes from a
+  later session and is reported, not preserved in a captured log.
+- `binary`, **the two untriggered messages exist as literals**: `%s espionage operation stage #%i:
+  Invalid event '%s'` and `%s espionage operation stage #%i: Invalid event type for event '%s'.
+  Expected: %s, actual: %s` are in `stellaris.exe` (verbatim, `DOORS-RESULTS.md` section 6.3, which
+  reads them out of the binary and notes that the probe never reached them). Their existence is what
+  makes "stage event existence" and "stage event type" checkable AT ALL - the first from the files,
+  the second only when the event's own definition is in scope.
+- `vanilla`, **the schema the checker implements is the install's own documentation**:
+  `common/espionage_operation_types/operations.txt:1-16` (field table), `:5`
+  `stages = <int> # Should match number of defined stages below.`, `:8-12` the `stage` block's
+  `difficulty` / `icon` / `event`, `:14` `on_roll_failed = <effect> # Effect to fire when a roll
+  fails, with scope this=spy operation.`; `example.txt` repeats the same contract. Measured over the
+  three shipped files: **27** top-level operations, and all 27 agree with their own declaration
+  (`stages` present and equal to the `stage` block count, `on_roll_failed` present, every stage
+  carrying an `event`) - i.e. the rules fire on a broken file and stay quiet on the install.
+- `vanilla`, **the stage event is a different event TYPE, which is why the type check needs the event
+  in scope**: `events/nemesis_operations_events_1.txt:42-77` declares
+  `espionage_operation_event = { id = operation.1000 ... espionage_operation = yes ... }` and
+  `operations.txt:71` names it with `event = operation.7000`. A `country_event` id in that field is
+  exactly what `Invalid event type for event '%s'. Expected: %s, actual: %s` is for - and the
+  checker can only see it when the event file was passed alongside the operation file.
+- `measured`, **the rule exists in the plugin and FAILS IF REMOVED**: `scripts/selftest.mjs` pins the
+  two rule ids against a fixture in the probe file's shape - a good operation, an operation that
+  declares `stages = 2` with one `stage`, and one with no `on_roll_failed` - and asserts the exact
+  severity and the counters returned by `checkFiles`. The same group asserts that a healthy operation
+  produces none of the three findings, so a rule that fires on everything is caught as well.
+- `measured`, **what the plugin's file inspector did before this rule**: `src/lib/filecheck.mjs`
+  routed a `common/<anything>/*.txt` that was not an events file to
+  `checkButtonEffectsFile`, whose rule ids are `button-effect-key-shape`,
+  `button-effect-not-a-block` and `button-effect-without-effect` - so an operation file was checked
+  for the wrong schema's shape and the engine's own two load-time errors were invisible to the tool.
+
+## Rules
+
+- `espionage-operation-stage-count`: the number of `stage` blocks must equal the declared `stages`,
+  and `stages` must be declared. The engine loads the operation but the operation cannot progress
+  through the chapters it says it has - and it says so at file load, naming the key.
+- `espionage-operation-no-on-roll-failed`: an operation without `on_roll_failed` "will never
+  progress" in the engine's own words. This is not a style warning; a failed roll has no effect to
+  run.
+- `espionage-operation-stage-event-unresolved`: a stage's `event` must name an event that exists. The
+  rule is a WARNING with a stated limit, because the checker can only resolve ids in files it was
+  given - the engine resolves them after the whole `events/` tree is loaded, and its message for a
+  miss is `... Invalid event '<id>'`.
+- A mod's new operation needs no `.gui` at all: the engine fills `operations_grid`, `filters_grid` and
+  `assets_grid` from `common/espionage_operation_types/`, `common/espionage_operation_categories/` and
+  `common/espionage_assets/`. Write the data and the UI follows, which is the whole point of
+  `dlc-panels-are-engine-views`.
+- Put the DLC gate in the operation's own `potential`, not in the panel: vanilla's 14 `has_nemesis`
+  predicates live in `operations.txt` (`:108`, `:173`, `:224`, `:299`, ...), and
+  `operation_gather_information` even carries two `desc` branches for the no-DLC case
+  (`operations.txt:38-45`).
+- Do not expect the checker to grade the stage event's TYPE. Type grading needs the event's
+  definition, and an event id that resolves to nothing is indistinguishable from an event id defined
+  in a file the caller did not pass - so the honest answer is "unresolved", not "wrong".
+- Do not plan an in-game test around `event <espionage_operation_event id>` in the console. The engine
+  enforces the event type's own scope at fire time (`Event fired on wrong scope. Got country, expected
+  espionage_operation`), so the console cannot reach it; the test needs a real operation with a spy
+  network. This is the same discipline as the load-time rules, one step later: **definition faults are
+  reported at load, scope faults at fire**.
+
+## Breaks
+
+- Writing `stages = 3` and two `stage` blocks "for now". The engine reports it at every launch, on
+  the main menu, and the operation's chapter count is whatever the mismatch leaves behind.
+- Copying an operation and dropping `on_roll_failed` because the copy was of a fragment. The engine
+  says `operation will never progress` and the operation stays stuck mid-roll for the whole game.
+- Naming a stage event that does not exist, or naming a `country_event` instead of an
+  `espionage_operation_event`. The engine's messages for those two are in the exe but were not
+  triggered by this round's probe, so treat them as the engine's stated contract rather than as
+  observed lines.
+- Reading the operation file's top-level keys as `button_effects` entries (the pre-rule behaviour of
+  this project's own checker). The shapes look similar - a bare key and a block - and the rules that
+  apply are different.
+- Assuming a load-time warning is cosmetic because the game still starts. Both message sites are
+  validation of a definition the runtime then uses: an operation whose chapters and events do not
+  line up is broken content with a clean-looking log.
+
+## 待确认
+
+- **The exact expression the engine compares against `stages`.** The measured message names the fault
+  for "declared 2, defined 0"; whether the check is `stage` block count, the highest stage index + 1,
+  or something else for 3-vs-2 was not probed, and the checker implements the count reading that the
+  install's own field table states (`Should match number of defined stages below`).
+- **When the two untriggered messages fire.** `Invalid event '%s'` and `Invalid event type for event
+  '%s'. Expected: %s, actual: %s` are literals in the exe; no run in this wave produced either, so
+  the trigger conditions (an id that resolves nowhere? a `country_event` id? an event in a namespace
+  that failed to load?) are inferred from their text, not measured. The checker's third rule is
+  therefore a warning with an explicit "could not see the event" message rather than a claim about
+  what the engine does.
+- **Whether `stages` may be omitted deliberately.** No vanilla operation omits it and the field table
+  presents it as required, so the checker reports a missing `stages`; a mod that intends the engine
+  default would be reported, and that reading has not been tested against the engine.
+- **Whether an `espionage_operation_event` can carry `custom_gui`, and what it draws if it does.** The
+  wave's Door E measured that the engine ACCEPTS `custom_gui` on that event type at load with zero
+  complaints (including for a window that does not exist), and that the block IS validated (a bogus
+  field in it was reported at its own line). The runtime half is still UNPROVEN, and as of 2026-10-06
+  the console route is known to be closed: `event probe_doors_e.1` is refused with
+  `Event fired on wrong scope. Got country, expected espionage_operation`. The remaining route is to
+  start a real operation (a spy network, or an effect that creates one if such exists).
+  `DOORS-RESULTS.md` sections 6.3, 10 (item 6) and 12.3.
+- **Whether `on_roll_failed` naming a nonexistent scripted effect is reported as one of these two
+  messages.** The probe's own `on_roll_failed = { nothing = yes }` produced
+  `effect_impl.cpp:822]: Script Error: Invalid scripted effect: nothing at file:
+  common/espionage_operation_types/zz_gui_probe_doors_e_ops.txt line: 15` - a THIRD validation path,
+  reported by the effect layer rather than by `espionage_operation_type.cpp`. The checker does not
+  grade it.

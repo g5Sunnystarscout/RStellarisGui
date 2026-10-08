@@ -1,0 +1,92 @@
+---
+id: gui-layout-tool-surface
+category: tooling
+title: The tool surface, and the five API gaps that using it for real exposed
+title_zh: 工具面，以及真实使用暴露出的五个 API 缺陷
+summary: Every gap here was found by adopting the plugin for a real multi-window mod, and every one was SILENT - no error, no warning, an output that looked plausible. That is the class of defect a measurement tool is least allowed to have, because the whole point of the tool is to be the thing that notices.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.gui, .txt, .yml]
+tags: [tools, api, buttonText, valueWidth, live-value, apply_to, container-name-collision, GAP-4, GAP-5, GAP-6, GAP-7, GAP-8, GAP-9, silent-failure]
+related: [apply-preserves-transparency-and-comments, bar-construction, text-channels]
+sources: []
+---
+
+## What it is
+
+The plugin's job is to be the thing that notices. Every gap in this topic was found by using it for
+real, and every one was **silent**: no error, no warning, an output that looked plausible. Three of
+them made a correct-looking report WRONG rather than incomplete, which is the worse failure.
+
+## Syntax
+
+```
+# The chain, and what each step is for.
+gui_assets_defaults                                    -> the verified sprites and fonts
+gui_assets_search    { query: "close" }                -> real sprite names with real sizes
+gui_layout_new       { name: "my_window" }             -> layout_id
+gui_layout_edit      { layout_id, edits: [...] }       -> the new tree
+gui_layout_add       { layout_id, nodes: [...] }       -> the usual way to add a BAR
+gui_layout_validate  { layout_id }                     -> findings with coordinates and fixes
+gui_layout_preview   { layout_id, inline_image: true } -> look at it
+gui_emit_files       { layout_id, output_root: "D:\\out" }   -> DRY RUN first
+gui_emit_files       { layout_id, output_root: "D:\\out", dry_run: false }
+gui_check_files      { paths: [...], extra_roots: [modRoot] } -> files the tool did NOT write
+gui_log_scan         { limit: 50 }                     -> what the engine did, in order
+```
+
+## The five gaps, and the shape of each
+
+| gap | the silent failure | what closed it |
+| --- | --- | --- |
+| **GAP-4** | `apply_to` with an edit that ADDS a top-level window: the new element's body was the whole file (146,310 -> **300,332 bytes**, two copies of every window), a new element adopted another's block and came out empty, or its own `name` was dropped | an added element is RENDERED, not spliced; an element with no block adopts no other element's block; the baseline guard tests SUBSUMPTION, not equality |
+| **GAP-5** | an unresolved `[$Token$]` live value measured its own token width (146 px) in a 70 px column: **30 false `text-overflow`** findings | the measurement knows about the live channel: no `text-overflow`, collision extent falls back to the box, and it is reported once as `text-live-value` |
+| **GAP-6** | `readColumn(node, 'valueText', ...)` derived BOTH the node key and the field prefix, so it read `valueTextWidth` / `valueTextGap` — neither documented anywhere; a caller passing `valueWidth: 170` got the 70 px default with **no error** | node key and field prefix are separate parameters; the documented names are read; an old spelling raises `bar-field-deprecated` |
+| **GAP-7** | `buttonText` was in NO kind's field set, so the one measured live-text channel was reported as `unknown-field` **62 times** | `buttonText` is a field on the kinds that accept it — and a genuine unknown field is visible again among them |
+| **GAP-8** | the live channel required a `label`: `labelLive = label !== null && (labelEffect \|\| effect)`, so a caller passed a label it did not want purely to reach the value channel | the switch is the two fields that describe it, so `effect` alone puts the value column on the channel |
+| **GAP-9** | `container-name-collision` compared `sourceFile` against the hit's `file` with a PATH-SUFFIX test: it fired on every window of any mod passed as an extra root (**9 false findings**) and it SWALLOWED a real collision when a mod file is named like the vanilla file it shadows | the asset index records the ROOT each container name was indexed under; file identity is an absolute path whenever both sides have one |
+| **GAP-10** | `window-text-data-function` matched the `GetX` inside `[$GetUngaAttUnNato$]`, reporting 32 readouts as "the player reads this literally" about strings the player reads as a NUMBER | a bracket whose whole content is one unexpanded token is no longer returned; a genuine call beside a token still is |
+
+## The two rules these gaps produced
+
+* **A caller must never silently get nothing.** GAP-6 is the archetype: a documented field name was
+  inert and the caller had no way to know. Any accepted-but-unused spelling must be reported.
+* **A live value is not ink** (GAP-5/7/8/10). A measurement that cannot know what the user will read
+  must not be charged as if it did — and must not be thrown away either, because it is exactly the
+  number that shows the box is a 2-5 character budget.
+
+## Breaks
+
+- **GAP-6, a documented field name that was inert.** `readColumn(node, 'valueText', ...)` derived BOTH the node key and the field prefix from the one string it was given, so it read `valueTextWidth` / `valueTextGap` — neither documented anywhere — and a caller who passed `valueWidth: 170` got the 70 px default with NO error. `rowLabel` and `seats` hid it because for them the node key and the field prefix are the same word. `barFieldsFromElements` wrote the same inert name, so a bar cloned out of an imported tree silently reverted its value column to 70 px.
+- **GAP-9, a path-SUFFIX test for file identity.** Comparing the node's `sourceFile` against the hit's `file` with a suffix test is wrong in both directions: it fired on every window of any mod whose root was passed as an extra root (9 false findings on the mod, each naming the mod's own file as "the vanilla window"), and it SWALLOWED a real collision when the mod file is named like the vanilla file it shadows — measured, a mod's `interface/planet_view.gui` redefining the vanilla `planet_view` reported 0 collisions, because `...\gap9b\interface\planet_view.gui`.endsWith(`interface\planet_view.gui`) is true.
+- **GAP-5, charging a live value as ink.** An unresolved `[$Token$]` measured its own token width (146 px) inside a 70 px column and produced 30 false `text-overflow` findings. There is no width that satisfies the rule: widening the box to 160 px clears the overflow and puts the box on top of the action buttons, which the same run then reports as a real `text-collision` between two clickable things.
+- **GAP-10, matching a `GetX` inside a token.** `window-text-data-function` reported all 32 readouts as "the player reads this literally" about strings the player reads as a NUMBER.
+- **GAP-7, a field the emitter wrote and the validator called unknown.** `buttonText` was in no kind's field set, so the ONE measured live-text channel was reported as `unknown-field` 62 times — which makes the rule unusable, because a genuine unknown field would be invisible among them.
+- **GAP-8, a live channel that required an unwanted label.** `labelLive = label !== null && (labelEffect || effect)` meant a caller had to pass a label it did not want — `label: <the row label again>`, `labelSide: 'none'` — purely to reach the value channel.
+- **A stale asset cache.** `getAssetIndex({ root, extraRoots, refresh: false })` returned the cached index (9,198 sprites, without the mod's three), so the mod's own `GFX_unga_neutral_marker` came back `unknown-sprite` 11 times and its `geocentric_unga_diag_close` `effect-unresolved` 6 times — with `extra_roots` set. With `refresh: true` the same call indexed 9,201 sprites and both rule sets went to zero.
+
+## Evidence
+
+- `measured`: every gap above was found by adopting the plugin for `geocentric_origin`, a 301,146-byte `.gui` with eleven event windows and 30 readout bars, and every one was silent. `docs/gui-pitfalls.md:880-886`.
+- `measured` (GAP-4): the 300,332-byte and 923,055-byte failures, and the emptied new window, all invisible to `checkGuiSyntax` (the output stays balanced) and to a "count the windows" check (the damage is indented). `docs/gui-pitfalls.md:890-909`, `<clone>/unga-fix/PLUGIN-GAPS.md:248-370`.
+- `measured` (GAP-5): 146 px / 152 px measured against a 70 px column, **30 false findings**; and widening the box to 160 px clears the overflow and puts the box on top of the action buttons, which the same run reports as a real `text-collision` between two clickable things. `docs/gui-pitfalls.md:925-940`.
+- `measured` (GAP-7): `buttonText` appears 456 / 14 / 2 times on `buttonType` / `guiButtonType` / `effectbuttonType` across the install, and `emit.mjs` already listed it in its per-kind field order, so **the emitter wrote a field the validator called unknown**. `docs/gui-pitfalls.md:969-976`.
+- `measured` (GAP-8): the live value button carries `quadTextureSprite = "gfx_transparency_white"`, which is what the reference's own live value button carries (`zz_geocentric_unga.gui:3354`) — and see the `transparency-white-plate` topic for what that sprite turned out to be.
+- `measured` (GAP-9): 9 false findings on the mod, and a real collision swallowed, because `...\gap9b\interface\planet_view.gui`.endsWith(`interface\planet_view.gui`) is true. Both directions are asserted. `docs/gui-pitfalls.md:989-1007`.
+- `measured` (the stale cache): `getAssetIndex({ root, extraRoots, refresh: false })` returned the cached index (9,198 sprites, without the mod's three), so the working mod's own `GFX_unga_neutral_marker` came back `unknown-sprite` 11 times and its `geocentric_unga_diag_close` `effect-unresolved` 6 times; with `refresh: true` the same call indexed 9,201 sprites and both rule sets went to zero. `docs/gui-pitfalls.md:428-433`.
+- `measured`: each defect was re-introduced on its own and each was caught by its own assertion; the counts are in the groups' notes. `docs/gui-pitfalls.md:1009-1012`.
+- `measured`: the checks landed as `scripts/selftest.mjs` groups "apply mode: adding a top-level window (GAP-4)", "the bar API honours its own documented names, and a live value is not ink (GAP-5/6/7/8)", and the GAP-9 assertions inside "container-name collisions and extra roots (B3/B8)".
+
+## Rules
+
+- Every tool result that changed something states WHERE it was written. The hard constraint is that emitted files go to an explicit output directory and nowhere else.
+- Every emitter defaults to `dry_run: true`. Inspect the plan, then repeat with `dry_run: false` and an explicit `output_root`.
+- Pass `extra_roots` pointing at the mod when validating or checking a mod's files, or every mod-defined `effect` is a false `effect-unresolved` and every mod sprite a false `unknown-sprite`.
+- **WHEN A MOD SPRITE IS REPORTED UNKNOWN, RE-RUN WITH THE CACHE REFRESHED BEFORE BELIEVING IT.** A stale asset cache produces the same false positives even with `extra_roots` set (see `## Breaks`).
+- Re-parse the INSTALLED file and assert the invariants on the BYTES on disk, not on the model that produced them. That is the check that catches a patch script which silently did nothing.
+- Read `gui_log_scan` before changing anything. `error.log`'s `Could not find ... in window`, `Unexpected token:`, `Wrong scope for effect`, `Event <id> has no options` and `Missing localization key [x]` are the engine's complaints, and `eventcommands.cpp:88 ... selectedOption N` is its record of what the player clicked.
+- A clean verdict with `textMeasured: false` is not evidence about text. Check that the measurement actually ran.
+
+## 待确认
+
+- Whether reading a `.gui` needs any field this plugin's kind table still does not model. The install produces 0 `field-not-accepted` findings from `gui_check_files` across all 177 files, which is the two-way check (`docs/engine-feedback.md:111-114`), but that only proves no FALSE positive against vanilla — a kind with no vanilla use would be invisible to it.
+- Whether `dynamic_extra_height`'s arithmetic matches the field name. See `docs/gui-pitfalls.md:637-642`.

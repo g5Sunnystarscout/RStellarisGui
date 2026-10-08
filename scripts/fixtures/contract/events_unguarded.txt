@@ -1,0 +1,688 @@
+# FIXTURE: the BROKEN event file. Every `geocentric_unga_main_option_effect = yes` call has been
+# replaced by a direct `country_event = { id = geocentric_unga.1 }`. Option 0 is what the
+# engine's close control selects, so this closes the window and immediately re-opens it.
+
+########################################################################
+# Geocentrism - UN General Assembly windows
+#
+# Six windows, six events, ONE window on screen at a time.
+#
+# The left sidebar of every window is the engine-filled event option list (the container
+# named "option_list" that lives in the window's EVENT_DIPLO container, which the .gui places
+# in the sidebar). Each committee entry is therefore an EVENT OPTION, not a button:
+# choosing an option consumes the event it belongs to, so the window it was drawn in is
+# dismissed and the event fired from that option's hidden_effect replaces it. That is what
+# makes opening a panel dismiss the previous one instead of stacking another window.
+#
+# Evidence:
+#   * No engine effect closes an event window. logs/script_documentation/effects.log lists
+#     1056 effects; none matches close/window/dismiss/gui (only close_branch_office,
+#     set_closed_borders, open_shroud_tab, force_show_diplomacy, force_show_espionage).
+#   * An effectbuttonType inside a live window only fires its button_effect; the window stays.
+#     That is what produced two stacked NATO windows.
+#   * Vanilla switches sub-screens exactly this way: events/caravaneer_events.txt:498-532
+#     (a cara.200 option whose hidden_effect fires cara.210) and it guards the entry point
+#     against duplicates with `has_active_event` (common/scripted_triggers/
+#     02_scripted_triggers_caravaneers.txt:9-19). Kasako's framework does the same:
+#     events/FW_evts_CORE_panel.txt:276-380 (options) -> FW_efts_MODMENU.txt:141 (next event).
+#   * `custom_gui` on an option chooses that option row's container; event level
+#     `custom_gui_option` is only the default (Stellaris wiki, Event modding: "Can be
+#     overwritten by custom_gui used in option's themselves").
+#
+# `diplomatic = yes` is required for `custom_gui` to be honoured. `force_open = yes` is kept as
+# in the working state (vanilla uses it on 128 diplomatic events; nothing in the engine
+# documentation ties it to window stacking, and removing it would risk the window not opening).
+########################################################################
+
+namespace = geocentric_unga
+
+# ---------------------------------------------------------------------------
+# The six panel windows. Every one of them carries the same six navigation
+# options, so any panel can be reached from any panel in one click.
+# ---------------------------------------------------------------------------
+
+country_event = {
+	id = geocentric_unga.1
+	title = geocentric_unga.1.title
+	desc = geocentric_unga.1.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_agenda_option_side"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+
+	option = {	# Agenda 1
+		name = unga_agenda_1
+		custom_tooltip = unga_agenda_effect_1
+		allow = {
+			custom_tooltip = {
+				fail_text = unga_requires_influence
+				has_resource = { type = influence amount >= 30 }
+			}
+		}
+		hidden_effect = {
+			add_resource = {
+			influence = -30
+		}
+			country_event = { id = geocentric_unga.11 days = 1 }
+		}
+	}
+	option = {	# Agenda 2
+		name = unga_agenda_2
+		custom_tooltip = unga_agenda_effect_2
+		allow = {
+			custom_tooltip = {
+				fail_text = unga_requires_influence
+				has_resource = { type = influence amount >= 30 }
+			}
+		}
+		hidden_effect = {
+			add_resource = {
+			influence = -30
+		}
+			country_event = { id = geocentric_unga.12 days = 1 }
+		}
+	}
+	option = {	# Agenda 3
+		name = unga_agenda_3
+		custom_tooltip = unga_agenda_effect_3
+		allow = {
+			custom_tooltip = {
+				fail_text = unga_requires_influence
+				has_resource = { type = influence amount >= 30 }
+			}
+		}
+		hidden_effect = {
+			add_resource = {
+			influence = -30
+		}
+			country_event = { id = geocentric_unga.13 days = 1 }
+		}
+	}
+	option = {	# Agenda 4
+		name = unga_agenda_4
+		custom_tooltip = unga_agenda_effect_4
+		allow = {
+			custom_tooltip = {
+				fail_text = unga_requires_influence
+				has_resource = { type = influence amount >= 30 }
+			}
+		}
+		hidden_effect = {
+			add_resource = {
+			influence = -30
+		}
+			country_event = { id = geocentric_unga.14 days = 1 }
+		}
+	}
+	option = {	# Agenda 5
+		name = unga_agenda_5
+		custom_tooltip = unga_agenda_effect_5
+		allow = {
+			custom_tooltip = {
+				fail_text = unga_requires_influence
+				has_resource = { type = influence amount >= 30 }
+			}
+		}
+		hidden_effect = {
+			add_resource = {
+			influence = -30
+		}
+			country_event = { id = geocentric_unga.15 days = 1 }
+		}
+	}
+}
+
+country_event = {
+	id = geocentric_unga.2
+	title = geocentric_unga.nato.title
+	desc = geocentric_unga.nato.body
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_nato"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.3
+	title = geocentric_unga.eadi.title
+	desc = geocentric_unga.eadi.body
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_eadi"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.4
+	title = geocentric_unga.csto.title
+	desc = geocentric_unga.csto.body
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_csto"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.5
+	title = geocentric_unga.au.title
+	desc = geocentric_unga.au.body
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_au"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.6
+	title = geocentric_unga.nam.title
+	desc = geocentric_unga.nam.body
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_nam"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Follow-up events: an agenda was adopted. They reopen the main window with the
+# result text; choosing the "UN General Assembly" entry in the sidebar goes back to
+# the agenda picker (geocentric_unga.1).
+# ---------------------------------------------------------------------------
+
+country_event = {
+	id = geocentric_unga.11
+	title = geocentric_unga.10.title
+	desc = geocentric_unga.10.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	immediate = {
+		add_modifier = { modifier = unga_agenda_1_carried days = 1800 }
+	}
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.12
+	title = geocentric_unga.11.title
+	desc = geocentric_unga.11.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	immediate = {
+		add_modifier = { modifier = unga_agenda_2_carried days = 1800 }
+	}
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.13
+	title = geocentric_unga.12.title
+	desc = geocentric_unga.12.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	immediate = {
+		add_modifier = { modifier = unga_agenda_3_carried days = 1800 }
+	}
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.14
+	title = geocentric_unga.13.title
+	desc = geocentric_unga.13.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	immediate = {
+		add_modifier = { modifier = unga_agenda_4_carried days = 1800 }
+	}
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}
+
+country_event = {
+	id = geocentric_unga.15
+	title = geocentric_unga.14.title
+	desc = geocentric_unga.14.desc
+	diplomatic = yes
+	force_open = yes
+	is_triggered_only = yes
+	fire_only_once = no
+	custom_gui = "geocentric_unga_main"
+	custom_gui_option = "geocentric_unga_nav_option"
+
+	immediate = {
+		add_modifier = { modifier = unga_agenda_5_carried days = 1800 }
+	}
+
+	option = {
+		name = unga_sidebar_main
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_main
+		hidden_effect = { country_event = { id = geocentric_unga.1 } }
+	}
+	option = {
+		name = unga_sidebar_nato
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nato
+		hidden_effect = { country_event = { id = geocentric_unga.2 } }
+	}
+	option = {
+		name = unga_sidebar_eadi
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_eadi
+		hidden_effect = { country_event = { id = geocentric_unga.3 } }
+	}
+	option = {
+		name = unga_sidebar_csto
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_csto
+		hidden_effect = { country_event = { id = geocentric_unga.4 } }
+	}
+	option = {
+		name = unga_sidebar_au
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_au
+		hidden_effect = { country_event = { id = geocentric_unga.5 } }
+	}
+	option = {
+		name = unga_sidebar_nam
+		custom_gui = "geocentric_unga_nav_option"
+		custom_tooltip = unga_nav_tip_nam
+		hidden_effect = { country_event = { id = geocentric_unga.6 } }
+	}
+}

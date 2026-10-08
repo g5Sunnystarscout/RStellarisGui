@@ -1,0 +1,65 @@
+id = "window-dismissal"
+
+title = "A window is dismissed ONLY by choosing an event option - and close selects option 0"
+
+category = "contract"
+
+summary = "There is no engine effect that closes a custom_gui window, so a window stays open until the player selects an option; the engine's own close control selects the FIRST option and consumes the event before that option's effects run, which is why a naive \"go to main panel\" option 0 closes and instantly reopens the window, and why a country flag set from the close control's own button effect is the only reliable discriminator."
+
+file_types = [
+    ".gui",
+    ".txt"
+]
+
+tags = [
+    "custom_gui",
+    "close",
+    "option",
+    "selectedOption",
+    "has_active_event",
+    "country_flag",
+    "effectbuttonType",
+    "button_effects",
+    "dismissal"
+]
+
+body = """
+## What it is\n\nA `custom_gui` window has no dismiss verb. It is opened by an event naming it, and it goes away when\nthe player selects one of that event's options. Nothing else closes it — not an\n`effectbuttonType.effect`, not a navigation effect, not a second event.\n\nThe engine's own close control makes that harder than it sounds: the X is wired to **option 0**, and\nthe engine records the selection and CONSUMES the event BEFORE option 0's effects are evaluated.\n\n## The four load-bearing consequences\n\n* **(a)** Option 0 must not unconditionally re-fire the window's own event, or the window closes and\n  instantly re-opens — the user's words were 关掉一帧，然后立马重新打开 (\"closed for one frame, then\n  straight back\").\n* **(b)** `has_active_event` **cannot** detect \"this window was open a moment ago\". The engine has\n  already consumed the event by the time the option's trigger is read.\n* **(c)** The ONLY code that runs earlier is the close control's own BUTTON EFFECT, which the engine\n  logs one step before the selection. A flag set there is the reliable discriminator.\n* **(d)** `buttonType` cannot carry `effect` (`Unexpected token: effect`), so a close control that\n  needs script must be an `effectbuttonType` with the same\n  `name` / `quadTextureSprite` / `position` / `orientation` / `clicksound`.\n\n## 待确认\n\n- Whether the close-button -> option-0 wiring can be changed or disabled at all. Nothing in the\n  install's `.gui` files or its 1056 documented effects offers a field for it; the behaviour is\n  stated from the measured `selectedOption 0` sequence, not from a binding this project can read.
+"""
+
+syntax_blocks = [
+    "# 1. Navigation is event options, one event per panel. Vanilla switches sub-screens this way:\noption = {\n\tname = unga_sidebar_nato\n\tcustom_gui = \"geocentric_unga_nav_option\"     # the row container that draws this option\n\tcustom_tooltip = unga_nav_tip_nato\n\thidden_effect = { country_event = { id = geocentric_unga.2 } }\n}\n\n# 2. Option 0 of EVERY window calls this, and the close control's own button effect sets the flag.\n#    common/button_effects/zz_geocentric_unga_button_effects.txt\ngeocentric_unga_close_pressed = {\n\tpotential = { always = yes }\n\teffect = { set_country_flag = geocentric_unga_close_pressed }\n}\n\ngeocentric_unga_main_option_effect = {\n\tif = {\n\t\tlimit = { has_country_flag = geocentric_unga_close_pressed }\n\t\tremove_country_flag = geocentric_unga_close_pressed\n\t}\n\telse = { country_event = { id = geocentric_unga.1 } }\n}"
+]
+
+evidence = [
+    "log, verbatim from %USERPROFILE%\\Documents\\Paradox Interactive\\Stellaris\\logs\\game.log: [06:52:09][effect.cpp]: UNGA diag: CLOSE button pressed, then [06:52:09][eventcommands.cpp:88]: Event geocentric_unga.1 added info about event selection. selectedOption 0, human 1, playerEventId 9, then [06:52:09][scripted effect]: ... geocentric_unga.1 NOT active, firing it, then a SECOND selectedOption 0 for the same event. docs/gui-pitfalls.md:144-149.",
+    "log/install: logs/script_documentation/effects.log lists 1056 effects and NONE matches close/window/dismiss/gui. The nearest are close_branch_office, set_closed_borders, open_shroud_tab, force_show_diplomacy, force_show_espionage. There is no dismissal effect to find. docs/gui-pitfalls.md:108-110.",
+    "measured: an effectbuttonType inside a live window runs its button effect and the window STAYS. That is what produced two stacked NATO windows in the trial mod. docs/gui-pitfalls.md:110-112.",
+    "vanilla: the switch-by-option idiom is exactly what the install does — events/caravaneer_events.txt:498-532 (a cara.200 option whose hidden_effect fires cara.210). Kasako's framework does the same (events/FW_evts_CORE_panel.txt:276-380 -> FW_efts_MODMENU.txt:141). docs/gui-pitfalls.md:127-129.",
+    "measured: the shipped mod's own game.log shows geocentric_unga.2 ... selectedOption 0, then geocentric_unga.2 again 3.5 s later — a navigation cycle, and the wart this rule describes rather than the crash. docs/gui-pitfalls.md:181-183."
+]
+
+rules = [
+    "One event per panel; navigation is event options with hidden_effect, never an effect.",
+    "Option 0 of a window's event must be guarded, or it must be a deliberate navigation cycle. The rule custom-gui-option0-selfref follows custom scripted_effects to the event they fire and reads the flag guard: guarded -> info naming the flag; unguarded and nothing else opens the event -> warning \"the close control re-opens the window\"; unguarded but another event opens it -> info, a navigation cycle. docs/gui-pitfalls.md:177-183.",
+    "Do not reach for has_active_event or any has_*_event trigger to detect a just-closed window. The event is consumed first.",
+    "A control that needs script is an effectbuttonType, never a buttonType with effect.",
+    "Read gui_log_scan before theorising about \"nothing happened\". selectedOption N in order is the only record of WHICH control was clicked, and two option-0 selections of one event is the close-then-reopen cycle. This single line would have short-circuited several rounds of the project.",
+    "An event that renders a custom_gui window still needs at least one option (event-without-option), because the option is what closes the window."
+]
+
+breaks = []
+
+relationships = [
+    "window-name-contract",
+    "control-visibility-is-a-potential",
+    "gui-layout-tool-surface"
+]
+
+source_refs = [
+    "<Stellaris>/logs/script_documentation/effects.log"
+]
+
+title_zh = "窗口只能通过选择事件选项关闭——close 按钮选的是 option 0"
+
+verified_version = "Stellaris 4.4.6 \"Pegasus\""

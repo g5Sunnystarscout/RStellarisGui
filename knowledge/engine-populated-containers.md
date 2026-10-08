@@ -1,0 +1,246 @@
+---
+id: engine-populated-containers
+category: layout
+title: Four layout containers are filled by the ENGINE, not by your .gui - so a matrix is drawn, not declared
+title_zh: 四种布局容器由引擎填内容——所以矩阵是"画"出来的，不是"声明"出来的
+summary: gridBoxType, OverlappingElementsBoxType, listBoxType and smoothListBoxType take a size, a slot size and a format, and in all 261/189/43/242 vanilla blocks NOT ONE contains a nested element - the C++ fills them. That makes gridBoxType useless as a host for a mod's own cells, and the engine does not merely ignore a child put there: probed in game, it answers `Unexpected token: <the child's keyword>` at FILE LOAD and skips the whole child block, so the file is REJECTED. A matrix therefore has to be laid out as positioned containerWindowTypes. This topic states the measurement, the engine's own log lines, the install's own comment that proves the mechanism, and what the matrix component does instead.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.gui]
+tags: [gridBoxType, OverlappingElementsBoxType, listBoxType, smoothListBoxType, positionType, layout-container, matrix, engine-populated, if_resolution, if_scaled_resolution]
+related: [per-kind-size-and-field-forms, coordinate-semantics, gui-layout-tool-surface, host-gui-surface, positiontype-is-a-global-named-anchor, dlc-panels-are-engine-views]
+sources: [<Stellaris>/interface/additional_content/additional_content.gui, <Stellaris>/interface/starbase_view.gui, <Stellaris>/interface/council_view.gui, <Stellaris>/stellaris.exe, <clone>/unga-fix/PROBE-RESULTS.md, <clone>/unga-fix/DOORS-RESULTS.md, <mods>/gui_probe_bc, <mods>/gui_probe_scratch/positiontype-vs-exe.mjs]
+---
+
+## What it is
+
+Paradox UI has two kinds of container and they look identical in a `.gui` file:
+
+* **hosts** — `containerWindowType`, `windowType`, `dropDownBoxType`, `scrollbarType`, `spinnerType`.
+  The file declares the children and the engine draws them where they were declared.
+* **engine-populated boxes** — `gridBoxType`, `OverlappingElementsBoxType`, `listBoxType`,
+  `smoothListBoxType`. The file declares a box, its `size`, its `slotSize`/`spacing` and its `format`,
+  and the **C++ supplies the items**.
+
+The measurement that separates them, over the install's 177 `.gui` files, counting the blocks that
+contain at least one nested ELEMENT keyword inside their braces:
+
+| keyword | blocks | with a nested element | verdict |
+| --- | --- | --- | --- |
+| `gridBoxType` | 261 | **0** | engine-populated |
+| `OverlappingElementsBoxType` | 189 | **0** | engine-populated |
+| `smoothListBoxType` | 242 | **0** | engine-populated |
+| `listBoxType` | 43 | **0** | engine-populated |
+| `containerWindowType` | 3305 | 2710 | host |
+| `windowType` | 24 | 24 | host |
+| `dropDownBoxType` | 13 | 13 | host |
+| `scrollbarType` | 24 | 19 | host (the children are the named slider/track/button `guiButtonType`s) |
+| `spinnerType` | 40 | 40 | host (exactly two `guiButtonType` children each, named by `leftbutton`/`rightbutton`) |
+
+The install states the mechanism in its own comment, at the only place it declares grid boxes:
+`interface/additional_content/additional_content.gui:331-345` declares two **empty** boxes and
+annotates them
+
+```
+gridBoxType = {
+    name = "items_small"
+    size = { width = 100% height = 100%% }
+    slotSize = {}                       # Use the positionTypes at the top of the file to change the slot size
+    max_slots_horizontal = 0            # Use the positionTypes at the top of the file to change the max slots
+    format = "UPPER_LEFT"
+}
+```
+
+and the `positionType` names it refers to are literals in `stellaris.exe`
+(`additional_content_grid_spacing`, `additional_content_window_small_size`). So the grid's cell size is
+decided by compiled code reading a named constant, and the `.gui` cannot put anything in a cell.
+Anchors are a GLOBAL namespace, referenced by C++ rather than by another line of `.gui`: 163 of the
+224 line-rule `positionType` names are contiguous literals in the binary, 6 of them are named in
+another file (5 of those in comments - the install states the mechanism itself at
+`customize_species_shipsets.gui:21`, "Size is overriden by code with the value of the positionType
+\"ship_browser_3d_view_size\""), and element names share the same namespace. This project's earlier
+claim that **no** name is referenced elsewhere was false and is retired; see
+`positiontype-is-a-global-named-anchor` for both counts (233 by this project's parser, 224 by the
+probe's line rule) and the reproduction scripts.
+
+## Syntax
+
+```
+# WHAT A GRID BOX IS (and what it is not). Legal, emittable, and EMPTY by construction.
+gridBoxType = {
+    name = "my_mod_grid"
+    position = { x = 0 y = 0 }
+    size = { width = 400 height = 200 }     # the box's own extent
+    slotSize = { width = 100 height = 40 }  # the CELL size, read by C++
+    max_slots_horizontal = 4
+    format = "UPPER_LEFT"
+}
+# A child element written inside it is a REJECTED FILE, not a layout nuance: the engine answers
+# `Unexpected token: <the child's keyword>` at load and skips the whole child block.
+# `engine-populated-container-children` (ERROR) reports it. Measured: 0 of 261 vanilla gridBoxType
+# blocks contain a nested element, and probed in game on 2026-10-06 (see Evidence).
+
+# THE HOST FORM. A matrix of a mod's OWN cells is positioned containers:
+containerWindowType = {                        # the frame
+    name = "my_mod_matrix"
+    size = { width = 506 height = 96 }         # computed, not typed
+    containerWindowType = {                    # one cell, at a computed offset
+        name = "my_mod_matrix_r0_c0"
+        position = { x = 6 y = 6 }
+        size = { width = 120 height = 24 }
+    }
+}
+
+# THE COMPONENT THAT DOES THE ARITHMETIC (this plugin). Not an engine kind.
+{ kind: "matrix", name: "my_mod_matrix",
+  rows: 3, columns: 4,
+  cellWidth: 120, cellHeight: 24, gapX: 4, gapY: 2, padding: 6,
+  columnHeaders: ["my_mod_col_0", "my_mod_col_1", "my_mod_col_2", "my_mod_col_3"],
+  rowHeaders:    ["my_mod_row_0", "my_mod_row_1", "my_mod_row_2"],
+  cells: [ { row: 0, column: 0, node: { kind: "text", name: "c00", text: "my_mod_cell" } } ] }
+# x = padding + rowHeaderWidth + gapX + column * (cellWidth + gapX)
+# y = padding + columnHeaderHeight + gapY + row * (cellHeight + gapY)
+```
+
+## The defect this shape exposes
+
+A hand-built matrix fails in a way no other rule can see. A cell whose content is wider or taller
+than its slot:
+
+* does **not** overlap a sibling, because the slot containers are the siblings and they are all exactly
+  `cellWidth` x `cellHeight` - `sibling-overlap` is silent;
+* does **not** leave the window, because the frame is sized to hold the whole grid - `out-of-bounds` is
+  silent;
+* simply draws over the next column.
+
+The working mod's own matrix is a hand-computed grid of exactly this kind, and the class of edit that
+put a panel 150 px into the agenda group is the same class. `matrix-cell-overflow` (error) is the rule
+that names it, and it reports the overshoot in px plus the `cellWidth`/`cellHeight` that would fit.
+
+## Evidence
+
+- `vanilla`: counting blocks with at least one nested ELEMENT keyword, over all 177 `.gui` files:
+  `gridBoxType` 261/0, `OverlappingElementsBoxType` 189/0, `smoothListBoxType` 242/0, `listBoxType`
+  43/0, against `containerWindowType` 3305/2710, `windowType` 24/24, `dropDownBoxType` 13/13. Verified
+  twice: once through this project's own parser and once by a text-level scan that walks each block's
+  brace depth.
+- `vanilla`: `interface/additional_content/additional_content.gui:331-345` - two `gridBoxType` blocks
+  with `slotSize = {}` / `max_slots_horizontal = 0` and the comments "Use the positionTypes at the top
+  of the file to change the slot size" / "...the max slots". The first `positionType` in that file is
+  at `:2` (`additional_content_grid_spacing`).
+- `binary`: the strings `additional_content_grid_spacing` and `additional_content_window_small_size`
+  are literals in `stellaris.exe`, so the grid's slot size is set by compiled code reading a name -
+  which is also why `positionType` is not authorable by a mod (see `per-kind-size-and-field-forms`).
+  Measured over the corpus: **163 of the 224** line-rule `positionType` names occur as contiguous
+  literals in the binary (`<mods>/gui_probe_scratch/positiontype-vs-exe.mjs`), and **6** are
+  named in another `.gui` - so the name is global, and this topic's earlier "0 names referenced" was
+  wrong. `positiontype-is-a-global-named-anchor` carries the corrected figures and the retired claim.
+- `vanilla`: `listBoxType` and `smoothListBoxType` blocks that appear to have children do not: the
+  only nested keys the corpus shows under them are the SCALAR `scrollbartype`/`scrollbarType`
+  references (`interface/chat.gui:39` `scrollbartype = "standardlistbox_slider"`), which is a field,
+  not an element. This is the trap that makes the census read wrong if the child test does not also
+  require the child to have children of its own.
+- `measured`: the `matrix` component expands into one `containerWindowType` frame plus one positioned
+  `containerWindowType` per occupied slot, and `scripts/fixtures/matrix_window.gui` is the worked
+  example, asserted in `scripts/selftest.mjs`. `gui_matrix_spec` returns the arithmetic and the rules
+  as data.
+- `measured`: there is no `flowContainer`/`hbox`/`vbox` keyword anywhere in the install's `.gui`
+  corpus (0 matches), so `OverlappingElementsBoxType` is the only flow-like construct the engine has -
+  and it is engine-populated.
+- `log`, **2026-10-06 - what the engine DOES about a child, probed in a loaded game** (probe mod
+  `<mods>\gui_probe_grid`, `PROBE-RESULTS.md` section 2, run B; the engine's own
+  `error.log`, verbatim):
+
+  ```
+  [23:50:06][persistent.cpp:41]: Error: "Unexpected token: instantTextBoxType, near line: 31
+  " in file: "interface/zz_gui_probe_grid.gui" near line: 38
+  [23:50:06][persistent.cpp:41]: Error: "Unexpected token: containerWindowType, near line: 60
+  " in file: "interface/zz_gui_probe_grid.gui" near line: 65
+  ```
+
+  One line per child ELEMENT, at FILE LOAD (interface parsing runs while the game boots; the errors
+  are timestamped within 2 s of `error.log`'s first line), naming the child's keyword and the span it
+  skipped. The bogus scalar written INSIDE the nested child (line 64 of that file) is **absent** from
+  a log that reports the grid box's own bogus scalar (line 49) and a host container's (line 83), so
+  the child's subtree is skipped WHOLE. Nothing is drawn for it, and the file is rejected rather than
+  quietly degraded - which is why `engine-populated-container-children` is an ERROR and says so.
+  **Only `gridBoxType` was probed**; the other three kinds are expected to answer the same way (the
+  engine named the same token class) and that is stated as expectation, not as measurement.
+- `log`, **2026-10-06 - `if_resolution` is ACCEPTED and its contents SKIPPED at load** (Door B of the
+  in-game probe, `DOORS-RESULTS.md` section 2; probe mod `<mods>/gui_probe_doors_bc`, its own
+  copy of `interface/main.gui`, run1 and run2, identical in both):
+  `[08:42:49][persistent.cpp:41]: Error: "Unexpected token: probeZZifres_case2, near line: 41" in file:
+  "interface/main.gui" near line: 41`, the same for `probeZZifres_key3` (line 46) -
+  **the CONDITION KEYWORD NAME itself is read as an ordinary field and is not on any whitelist** - and
+  for `probeZZifres_case4` (line 53, inside the sibling keyword `if_scaled_resolution`), plus the two
+  positives `probeZZifres_hosttoken` (line 57, the host container's own body) and a bad `format` in a
+  `gridBoxType` outside the blocks (`gridbox.cpp:51`, which names the file).
+  **The three things that were NOT written are the measurement**: no line says `if_resolution` or
+  `if_scaled_resolution` is an `Unexpected token`; no line comes from the fully legal `position` /
+  `size` / `min_width` payload of case 1; and no line comes from any `gridBoxType` INSIDE a block
+  (deliberately, so the negative is meaningful). The same keyword written in
+  `common/script_values/` is treated as a plain SCRIPT OBJECT -
+  `[08:47:28][game_singleobjectdatabase.h:170]: Object with key: if_resolution already exists, using
+  the one at file: common/script_values/zz_probe_doors_b_ifres_values.txt line: 22` - i.e. the script
+  loader does not know it either, and "no error" there means "no use", not "works".
+  **Runtime branching was NOT measured**: all four probe runs stopped at the main menu (`game.log` 3
+  lines, no `Generating World`), so `starbase_view` / `council_view` were never built.
+
+## Rules
+
+- Do not put a mod's own children in `gridBoxType`, `OverlappingElementsBoxType`, `listBoxType` or
+  `smoothListBoxType`. The geometry and slot fields are real and emittable; the CONTENTS are not yours.
+  A child ELEMENT there is not ignored - the engine reports `Unexpected token: <the child's keyword>`
+  at file load and skips the whole child block, so the file is rejected:
+  `engine-populated-container-children` (error) reports it, and `unexpected-token` reports an unknown
+  SCALAR in the box's own body, which the same probe showed is an error too.
+- Build a matrix of a mod's own cells as positioned containers. Use the `matrix` component
+  (`gui_matrix_spec`) so the arithmetic is derived rather than typed, and so `matrix-cell-overflow`
+  can see a cell that does not fit.
+- A cell's `cellWidth`/`cellHeight` must be static pixels. Every cell coordinate is written into the
+  file as a literal, so a `%`/`%%`/`@variable` cell cannot be resolved and is refused
+  (`matrix-cell-size-not-static`).
+- An empty slot is emitted as NOTHING, not as a zero-size container: a zero-size element still has a
+  hit region.
+- When you need a list whose rows come from game data, that is what the engine-populated kinds are
+  FOR - read the vanilla block that does the same job and copy its geometry, and expect the C++ to
+  supply the items.
+- A grid box's CELL SIZE is an engine anchor: `slotSize`/`max_slots_horizontal` are resolved from a
+  `positionType` NAME the C++ reads, so moving a cell means re-pointing a global anchor - and the only
+  way to do that is to replace the WHOLE `.gui` that declares it, with a recorded base hash. A mod
+  cannot add an anchor and cannot reference one (`positiontype-is-a-global-named-anchor`).
+- `if_resolution` / `if_scaled_resolution` are legal BLOCK keys whose CONTENTS the engine skips at
+  load: the keyword is never reported, an unknown token inside the block IS reported, and a legal
+  `position`/`size` inside one produces no line at all - so "the engine read the fields and they were
+  fine" and "the engine never read the block" are different answers, and the measurement says the
+  latter. The install uses `if_resolution` in exactly **6** places across 2 files
+  (`starbase_view.gui:874`, `:880`, `council_view.gui:575`, `:580`, `:648`, `:653`) and
+  `if_scaled_resolution` **41** times across 5 files.
+
+## 待确认
+
+- Whether the engine REJECTS a child inside `OverlappingElementsBoxType`, `listBoxType` or
+  `smoothListBoxType`. This was the open question until 2026-10-06, and it is now answered for
+  `gridBoxType` ONLY: probed in a loaded game, a child element there is `Unexpected token:
+  <keyword>` at file load and the whole child block is skipped (see Evidence). The other three
+  measure 0 nested elements across the install and the engine named the same token class, so the same
+  answer is expected - but the probe did not place a child in them, and
+  `listBoxType name = "option_list"` is a known vanilla exception whose rows the engine supplies
+  itself, so this topic and the rule both stop short of claiming four measurements.
+- Whether `gridBoxType`'s own body accepts a scalar the model does not declare: the same probe showed
+  an unknown scalar there IS one `Unexpected token` line, so the field list for those kinds is exact
+  and `unexpected-token` reports a typo in one. What was not measured is the same question for a
+  scalar inside a kind the probe never touched.
+- Which C++ path fills each engine-populated kind, and whether a mod-authored `id`/`name` on the box
+  is what selects the content. The names the install uses (`items_small`, `category_tabs`,
+  `category_gridbox`, `chapters_box`) are looked up from code, but the lookup table itself was not
+  read out of the binary.
+- Whether `if_resolution` really BRANCHES at run time. The load-time half is measured (accepted,
+  contents skipped - see Evidence); the run-time half needs a loaded game, and the install supplies the
+  best test bed: `starbase_view.gui:874` (`max_height = 800`) and `:880` (`min_height = 801`) are
+  mutually exclusive at 960 height, so one of the two is the branch that is taken. Nothing in a log
+  records a successful layout resolution, so this half has to be LOOKED at.
+- What the legal CONDITION KEYWORDS of `if_resolution` are. Measured: the engine reads the condition
+  name as an ordinary field and reports an unknown one (`Unexpected token: probeZZifres_key3`), i.e.
+  there is no separate "condition name" parser. The install only ever writes `min_width`,
+  `max_height` and `min_height` (6 `if_resolution` blocks), so a rule can start from those three and
+  nothing more; the full accepted set was not enumerated.

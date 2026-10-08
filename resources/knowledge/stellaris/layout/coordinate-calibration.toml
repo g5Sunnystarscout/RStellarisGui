@@ -1,0 +1,56 @@
+id = "coordinate-calibration"
+
+title = "The calibration numbers behind the coordinate model"
+
+category = "layout"
+
+summary = "The coordinate system is trustworthy because it was measured over the whole vanilla corpus rather than assumed. scripts/calibrate-coords.mjs parses all 177 vanilla .gui files, computes every rect at every nesting depth under both candidate models, and reports containment per orientation family - the shipped model wins on aggregate containment and by a factor of eight on the lower_* family."
+
+file_types = [
+    ".gui"
+]
+
+tags = [
+    "calibration",
+    "containment",
+    "lower_left",
+    "coordinate-system",
+    "measurement",
+    "corpus",
+    "provenance"
+]
+
+body = """
+## What it is\n\nTwo models of `.gui` geometry are both self-consistent and both produce plausible output:\n\n* **Model A (shipped)** — `position` is added to the parent's `orientation` anchor, and the sign of\n  `y` is never negated. `dirY = 1` everywhere.\n* **Model B (rejected)** — `position.y` is negated for the bottom anchors (`lower_*`), on the theory\n  that a lower anchor means \"measured upwards\".\n\n`docs/sources.md` §3a records the measurement that settled it. It is re-runnable on any machine with\nthe install:\n\n```\nnode scripts/calibrate-coords.mjs            # the shipped model's figures\nnode scripts/calibrate-coords.mjs --compare  # the side-by-side, which is the point\nnode scripts/calibrate-coords.mjs --examples # the worked vanilla cases\nnode scripts/calibrate-coords.mjs --json     # the raw numbers\n```\n\n## Why \"containment\" is the right metric\n\nIt needs no ground truth beyond the files. An element is normally placed INSIDE its parent — that is\nwhat a layout is for — so a model under which children routinely fall outside their parents is\ndescribing a different coordinate system from the one the author wrote against. The `lower_*` family\nis where the two models disagree, so it is where the metric has power; the aggregate is reported\nbecause reporting only the winning family would look like cherry-picking.\n\n## 待确认\n\n- Why Model B's `lower_*` containment is as high as 0.0938 rather than 0. Elements whose position is near zero, or whose parent is small relative to the offset, land inside under either model; the residual was not broken down.
+"""
+
+syntax_blocks = [
+    "# The two models, as arithmetic. Only dirY differs.\n# Model A (shipped, src/lib/coords.mjs yDirectionForAnchor -> 1):\npivot = anchorPoint(parentRect, orientation) + (position.x, position.y)\n\n# Model B (rejected):\npivot = anchorPoint(parentRect, orientation) + (position.x, -position.y)"
+]
+
+evidence = [
+    "measured: aggregate containment 0.7733 (shipped) versus 0.7472 (negated); lower_* family 0.7398 versus 0.0938. Regenerate with node scripts/calibrate-coords.mjs --compare. README.md:284-286, docs/sources.md:173-221.",
+    "vanilla: the corpus is all 177 .gui files of the verified install, with 0 parse failures, so the comparison is not a sample. docs/kind-census.json.",
+    "vanilla: combat_view.gui:41-45 is the worked example — orientation = lower_left, origo = lower_left, position = { x = 35 y = -42 } places a window's bottom-left corner 42 px above the screen's bottom edge, which only reads correctly under Model A. README.md:280-283.",
+    "measured: scripts/selftest.mjs asserts all 81 orientation x origo combinations against an INDEPENDENTLY written expectation, and asserts an import -> emit -> re-import round trip reproduces every rect, so the calibration is not the only guard."
+]
+
+rules = [
+    "Do not \"fix\" the y sign. If a rect looks wrong, suspect the anchor or the origo, not the sign convention.",
+    "Re-run --compare before changing anything in src/lib/coords.mjs. It is the measurement, and it is cheap.",
+    "Report a claim about coordinates with the model it assumes. The difference between these two models is invisible on most individual examples; that is exactly why it was settled corpus-wide (see the engine-capability-vs-usage topic).",
+    "Containment is the metric. Do not substitute \"does this one window look right\"."
+]
+
+breaks = []
+
+relationships = [
+    "coordinate-semantics",
+    "engine-capability-vs-usage"
+]
+
+source_refs = []
+
+title_zh = "坐标模型背后的标定数字"
+
+verified_version = "Stellaris 4.4.6 \"Pegasus\""

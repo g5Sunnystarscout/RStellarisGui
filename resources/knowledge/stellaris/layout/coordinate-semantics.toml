@@ -1,0 +1,60 @@
+id = "coordinate-semantics"
+
+title = "position is added to the parent's orientation anchor, for all nine anchors"
+
+category = "layout"
+
+summary = "orientation names a nine-point anchor ON THE PARENT and position is an offset from it, so lower_* moves the reference point rather than negating the sign - a negative y from lower_left moves the element UP. The plugin keeps one canonical system (parent top-left, +y down) and converts at the file boundary; negating y for the bottom anchors was measured over the whole vanilla corpus and it is a regression, not a fix."
+
+file_types = [
+    ".gui"
+]
+
+tags = [
+    "orientation",
+    "origo",
+    "position",
+    "anchor",
+    "lower_left",
+    "coordinate-system",
+    "calibration",
+    "containerWindowType"
+]
+
+body = """
+## What it is\n\nEvery coordinate this plugin accepts, reports or draws is in ONE system: origin at the parent\nwindow's top-left, `+x` right, `+y` **down**, units are scaled UI pixels at the 1920x1080 base\nresolution. There is no other reading of `position` anywhere in the tool surface.\n\nThe `.gui` file's own rule, which the canonical system absorbs:\n\n```\ndirY   = 1                                       # for every orientation: the sign is never negated\nanchor = anchorPoint(parentRect, orientation)    # nine-point, on the PARENT\npivot  = anchor + (position.x, dirY * position.y)\ncorner = pivot - size * origoFraction            # nine-point, on the ELEMENT\n```\n\nWith both defaults (`upper_left` / `upper_left`) `position` is simply the corner relative to the\nparent's corner. With `orientation = center, origo = center` the element is centred on its parent's\ncentre.\n\n## How the canonical frame is kept single\n\n`gui_layout_import` converts every parsed `position` into the canonical frame and keeps the literal\nthe file carried as `enginePosition`; `computeLayout` turns canonical positions into rects for the\npreview, the rect table and the validator; and `gui_emit_files` runs `prepareEngineCoordinates`\n(`src/lib/emit.mjs`) which derives the fields the engine reads from the same canonical value. The\nemitted file, the SVG and the rect table are therefore three renderings of one model, and an\nimport -> emit -> re-import round trip reproduces every rect exactly (asserted in\n`scripts/selftest.mjs` over nested `lower_*` containers).\n\nThe converter is `src/lib/coords.mjs`: `yDirectionForAnchor` at `:133` (the function the calibration\nexists to pin down), `anchorFractions` at `:148`, `anchorPointOf` at `:156`,\n`pivotFromEnginePosition` at `:169`, `enginePositionToCanonical` at `:193`,\n`canonicalPositionToEngine` at `:210`, `cornerFromPivot` at `:221`, `pivotFromCorner` at `:227`.\n\n## Syntax gotchas the converter handles\n\n* `orientation` selects an anchor on the PARENT; `origo` selects the reference point on the ELEMENT.\n  They are independent, and all 81 combinations are asserted against an independently written\n  expectation in `scripts/selftest.mjs`.\n* `origo` exists on `containerWindowType` ONLY (175 vanilla uses, 0 anywhere else). On an `iconType`\n  the equivalent is `centerPosition = yes` (285 vanilla uses), and `origo` on an icon is refused by\n  the engine: `Unexpected token: origo`. `src/lib/kinds.mjs:299` lists it in\n  `ENGINE_REJECTED_FIELDS`; the field lists at `:173` / `:283` are where the two per-kind spellings\n  live.\n* `position { x = ... }` without an `=` is ALSO valid (`interface/galaxy_view.gui:1646`) and used to\n  break the parser, spilling an element's fields and nested elements into its parent.\n\n## 待确认\n\n- The engine's own rounding of accumulated float advances and offsets. It is bounded by the 2 px disagreement between two shipped generations of the same font face (`docs/gui-pitfalls.md:530-533`), and sub-pixel in practice, but it is not directly observable.
+"""
+
+syntax_blocks = [
+    "# Same number, two different places on screen - because the ANCHOR moved, not the sign.\ncontainerWindowType = {\n\tname = \"a\"\n\torientation = \"upper_left\"        # anchor is the parent's top-left\n\torigo = \"upper_left\"              # pivot is the element's top-left\n\tposition = { x = 35 y = -42 }     # 42 px ABOVE the parent's top edge: OUTSIDE the parent\n}\n\ncontainerWindowType = {\n\tname = \"b\"\n\torientation = \"lower_left\"        # anchor is the parent's BOTTOM-left\n\torigo = \"lower_left\"              # pivot is the element's bottom-left\n\tposition = { x = 35 y = -42 }     # 42 px ABOVE the parent's bottom edge: INSIDE the parent\n}\n\n# The twelve canonical anchor names, and the vanilla spellings that map onto them. Anchor names\n# are matched case-insensitively, including the misspellings vanilla actually contains.\n#   upper_left  upper_center  upper_right\n#   center_left center        center_right\n#   lower_left  lower_center  lower_right\n# vanilla misspellings seen in the install: CENTERUP, LOWER_LEfT"
+]
+
+evidence = [
+    "vanilla: combat_view.gui:41-45 writes orientation = lower_left, origo = lower_left, position = { x = 35 y = -42 }, which puts the window's bottom-left corner 42 px ABOVE the screen's bottom edge — a NEGATIVE number moving the element UP the screen, exactly as the canonical system would. README.md:280-283.",
+    "measured: scripts/calibrate-coords.mjs --compare parses all 177 vanilla .gui files, computes every element's rect at every nesting depth under both candidate models, and reports containment per orientation family. Negating y for the bottom anchors drops aggregate containment from 0.7733 to 0.7472, and the lower_* family from 0.7398 to 0.0938. That is a regression, not a fix. README.md:284-286.",
+    "vanilla: the misspellings CENTERUP and LOWER_LEfT occur in the install and are normalised, so the converter cannot be a strict enum. docs/sources.md:236-251 (Correction 2).",
+    "vanilla: interface/galaxy_view.gui:1646 uses position { x = @[ shroudPlaneRadius ] y = @[ shroudPlaneRadius ] } — both the brace-without-equals form and the @[ name ] variable form are 4.4.6 syntax (34 uses of @[ ]). docs/engine-feedback.md:119-123.",
+    "measured: the round trip is asserted on nested lower_* containers in scripts/selftest.mjs (\"canonical coordinates and the engine converter\"), so the claim is a test, not a comment."
+]
+
+rules = [
+    "State the base resolution in every geometry report. All coordinates are pixels at 1920x1080; the game scales the whole UI, so \"overlap\" and \"out of bounds\" are only meaningful relative to a stated base.",
+    "Never negate position.y because the anchor is a lower_* one. Change the anchor and keep the sign; dirY is 1 for every orientation.",
+    "Move an element up by making position.y negative, whichever anchor is in play.",
+    "origo on anything but a containerWindowType is an error; use centerPosition = yes on an icon.",
+    "Anchor names are case-insensitive, including vanilla's own misspellings."
+]
+
+breaks = []
+
+relationships = [
+    "coordinate-calibration",
+    "per-kind-size-and-field-forms",
+    "parking-elements"
+]
+
+source_refs = []
+
+title_zh = "position 加到父元素的 orientation 锚点上，九个锚点都一样"
+
+verified_version = "Stellaris 4.4.6 \"Pegasus\""

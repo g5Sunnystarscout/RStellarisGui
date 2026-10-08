@@ -1,0 +1,17 @@
+guiTypes = {
+	containerWindowType = {
+		name = "zz_surface_host"
+		size = { width = 520 height = 300 }
+
+		background = {
+			name = "zz_surface_host_bg"
+			quadTextureSprite = "GFX_tiles_dark_area_cut_8"
+		}
+
+		iconType = {
+			name = "zz_surface_host_icon"
+			quadTextureSprite = "GFX_arrow_left"
+			position = { x = 12 y = 10 }
+		}
+	}
+}

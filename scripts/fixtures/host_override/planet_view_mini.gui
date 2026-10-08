@@ -1,0 +1,96 @@
+#------------------------------------------------------------------------------------
+# OVERRIDE of vanilla_host.gui (337 bytes, 18 lines)
+# vanilla source sha256: 29713e3c4f4025da67e66dc6d41deebb1fec95cdb469688d89d19e3256e38524
+#
+# This file was produced by RStellarisGui gui_emit_override on purpose. A full-file override
+# replaces the vanilla file for every mod in the load order, so if the game version changes,
+# re-run with `expected_source_hash` set to the hash above: the call refuses when the vanilla
+# file no longer matches, which is the only signal that this copy is now stale.
+#
+# Added: zz_surface_host_matrix -> zz_surface_host
+#------------------------------------------------------------------------------------
+guiTypes = {
+	containerWindowType = {
+		name = "zz_surface_host"
+		size = { width = 520 height = 300 }
+
+		background = {
+			name = "zz_surface_host_bg"
+			quadTextureSprite = "GFX_tiles_dark_area_cut_8"
+		}
+
+		iconType = {
+			name = "zz_surface_host_icon"
+			quadTextureSprite = "GFX_arrow_left"
+			position = { x = 12 y = 10 }
+		}
+		containerWindowType = {
+			name = "zz_surface_host_matrix"
+			position = {
+				x = 12
+				y = 40
+			}
+			size = {
+				width = 614
+				height = 62
+			}
+			orientation = upper_left
+			instantTextBoxType = {
+				name = "zz_surface_host_matrix_row0"
+				position = {
+					x = 6
+					y = 6
+				}
+				maxWidth = 140
+				maxHeight = 24
+				orientation = upper_left
+				alwaysTransparent = yes
+				font = "cg_16b"
+				text = "zz_surface_host_row_0"
+				fixedSize = yes
+				format = left
+				vertical_alignment = center
+			}
+			instantTextBoxType = {
+				name = "zz_surface_host_matrix_row1"
+				position = {
+					x = 6
+					y = 32
+				}
+				maxWidth = 140
+				maxHeight = 24
+				orientation = upper_left
+				alwaysTransparent = yes
+				font = "cg_16b"
+				text = "zz_surface_host_row_1"
+				fixedSize = yes
+				format = left
+				vertical_alignment = center
+			}
+			instantTextBoxType = {
+				name = "zz_surface_host_cell_00"
+				position = {
+					x = 150
+					y = 6
+				}
+				maxWidth = 140
+				maxHeight = 18
+				orientation = upper_left
+				font = "cg_16b"
+				text = "zz_surface_host_cell_00"
+			}
+			instantTextBoxType = {
+				name = "zz_surface_host_cell_12"
+				position = {
+					x = 458
+					y = 32
+				}
+				maxWidth = 140
+				maxHeight = 18
+				orientation = upper_left
+				font = "cg_16b"
+				text = "zz_surface_host_cell_12"
+			}
+		}
+	}
+}

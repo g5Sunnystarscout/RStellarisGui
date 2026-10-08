@@ -1,0 +1,85 @@
+id = "bar-construction"
+
+title = "A bar is DRAWN, not declared - and the drawing is a transcription"
+
+category = "drawing"
+
+summary = "There is no bar window element in Stellaris 4.4.6. Every bar in every .gui file is a dark 9-slice tile under a white 3x3 tile with a 2 px horizontal inset, and the only thing that makes it read as a bar is that construction. The plugin carries the transcription of the working mod's six power-projection ranking bars as data, including the reference's own defect (a 400 px fill in a 400 px track) which it refuses to clone."
+
+file_types = [
+    ".gui",
+    ".gfx"
+]
+
+tags = [
+    "bar",
+    "progressbarType",
+    "corneredTileSpriteType",
+    "borderSize",
+    "inset",
+    "fill",
+    "track",
+    "cloneOf",
+    "bar-clone-source-missing",
+    "bar-fill-overflows-track",
+    "bar-colour-not-exist",
+    "GFX_tiles_dark_area_cut_8",
+    "gfx_transparency_white"
+]
+
+body = """
+## What it is\n\nThe complete set of block keywords that can appear inside a `.gui` file's `guiTypes` block,\nmeasured over all **177** of the install's own `.gui` files, is **41 keywords** and none of them is a\nbar:\n\n```\nbackground  borderSize  buttonType  checkboxType  containerWindowType  cursor\ndefault_ime_text_color  dropDownBoxType  editBoxType  effectbuttonType  expandButton\nexpandedWindow  extendedScrollbarType  gridBoxType  guiButtonType  guiTypes  hide_position\niconType  if_resolution  if_scaled_resolution  instantTextBoxType  listBoxType  margin  offset\nOverlappingElementsBoxType  overlay  padding  pdx_tooltip_anchor_offset  position  positionType\nscrollbartype  show_position  size  slider  slotSize  smoothListBoxType  spinnerType  text_offset\ntextboxType  track  windowType\n```\n\n`progressbarType` / `progressbartype` / `progressBarType` — the three spellings the engine's `.gfx`\nparser accepts — occur **195** times in the install, and every one is inside a `.gfx` file: a search of\n`interface/**/*.gui` and `interface/**/*.txt` for all three spellings returns **0**. Vanilla's\n`progress_bar` elements are `iconType`s drawing an engine-driven `progressBarType` SPRITE, named by\nthe engine and filled with engine state. A sprite kind is not a window element, so a mod cannot ask\nfor one for an arbitrary value.\n\nSo a bar is a **cloning** problem, not a design problem. The specification is a transcription of the\nranking bars that already work.\n\n## The canonical construction\n\nSix rows of power-projection ranking bars, each row five SIBLINGS under the band — nothing is nested:\n\n| role | kind | position | size | sprite | `background.name` | offset from track | format / colour |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| name | `instantTextBoxType` | {26, 64} | max 202x18 | — | — | -214, -2 | left |\n| track | `containerWindowType` | {240, 66} | 400x20 | `GFX_tiles_dark_area_cut_8` | `bg` | 0, 0 | — |\n| fill | `containerWindowType` | {242, 70} | 383x12 | `gfx_transparency_white` | `bg` | +2, +4 | — |\n| value | `instantTextBoxType` | {646, 64} | max 70x18 | — | — | +406, -2 | right, `Y` |\n| seats | `instantTextBoxType` | {728, 64} | max 118x18 | — | — | +488, -2 | right, `E` |\n\nEvery one of those text elements also carries `alwaysTransparent = yes` and `fixedSize = yes`. Row\nspacing is 24 px.\n\n## Cloning a row\n\n```js\n{ kind: 'bar', name: 'unga_power_1_main', position: { x: 240, y: 66 }, width: 400, height: 20,\n  value: 383, max: 400, rowLabel: 'unga_faction_nato', valueText: 'unga_power_value_2',\n  valueColour: 'Y', seats: 'unga_power_seats_2', seatsColour: 'E' },\n{ kind: 'bar', name: 'unga_power_2_main', position: { x: 240, y: 90 }, cloneOf: 'unga_power_1_main',\n  value: 350, rowLabel: 'unga_faction_csto', valueText: 'unga_power_value_3',\n  seats: 'unga_power_seats_3' },\n```\n\n`cloneOf` names a bar EARLIER in the tree. The clone inherits the track, the inset, both sprites, the\nfonts and the column metrics, and overrides only its own `position`, proportion and text. Its elements\nare renamed onto its own row index by ROLE, not by string-replacing the source's name — the derived\nnames interpose the role, so `unga_power_track_1_main` does not contain `unga_power_1_main` as a\nprefix. A `cloneOf` naming a bar that is not there (or is not above this one) is\n`bar-clone-source-missing` (error).\n\n## The `from` mechanism\n\nA construction this plugin did not invent can also be READ OUT of an imported tree.\n`barFieldsFromElements({ track, fill, name, value, seats }, tree)` takes element nodes or their names,\nresolves them in an imported layout, and returns the bar fields that reproduce them: the track's size\nand tile, the fill's tile, height and horizontal inset, the columns' `maxWidth`s and the font. Note\nwhat it does NOT recover — the fill's LENGTH — because that is the caller's proportion and the import's\nown value may be the over-long one.\n\n## 待确认\n\n- Whether the engine has any other live-TEXT channel inside a `custom_gui` window. `effectbuttonType.buttonText` is the only one MEASURED; the claim is \"the only measured channel\", not \"the only channel\".\n- Whether a `progressBarType` sprite can be driven with a value a mod controls. The install's uses are all engine state, and no mod in this project's evidence has tried.
+"""
+
+syntax_blocks = [
+    "containerWindowType = {                     # the BAND\n\tname = \"unga_chart_main\"\n\tposition = { x = 228 y = 160 }\n\tsize = { width = 868 height = 312 }\n\tbackground = { name = \"bg\" quadTextureSprite = \"GFX_tiles_dark_area_cut_8\" }\n\n\tcontainerWindowType = {                   # TRACK: the dark 9-slice tile\n\t\tname = \"unga_power_track_1_main\"\n\t\tposition = { x = 240 y = 66 }\n\t\tsize = { width = 400 height = 20 }\n\t\tbackground = { name = \"bg\" quadTextureSprite = \"GFX_tiles_dark_area_cut_8\" }\n\t}\n\tcontainerWindowType = {                   # FILL: the white tile, x = track.x + 2, static length\n\t\tname = \"unga_power_fill_1_main\"\n\t\tposition = { x = 242 y = 70 }\n\t\tsize = { width = 383 height = 12 }\n\t\tbackground = { name = \"bg\" quadTextureSprite = \"gfx_transparency_white\" }\n\t}\n\tinstantTextBoxType = {                    # the columns are text, not part of the sprite\n\t\tname = \"unga_power_value_1_main\"\n\t\tposition = { x = 646 y = 64 }\n\t\tmaxWidth = 70\n\t\tmaxHeight = 18\n\t\tfont = \"cg_16b\"\n\t\ttext = \"unga_power_value_2\"\n\t\ttext_color_code = \"Y\"\n\t\talwaysTransparent = yes\n\t\tfixedSize = yes\n\t}\n}\n\n# The two install sprites, with their measured definitions:\n#   GFX_tiles_dark_area_cut_8  corneredTileSpriteType, borderSize = { x=8 y=8 }, with an effectFile\n#                              shader   ->  interface/fleet_view.gfx:2824-2830\n#   gfx_transparency_white     corneredTileSpriteType, size 3x3, borderSize = { x=1 y=1 }\n#                              ->  interface/core.gfx:119-124  (see the transparency-plate topic)"
+]
+
+evidence = [
+    "The horizontal inset is 2 px everywhere. In every one of the construction's eight uses the fill's x is the track's x + 2. That is the axis the invariant is about.",
+    "The fill's height is not a fixed margin. A 20 px track carries a 12 px fill (margin 4) and an 18 px track carries a 14 px fill (margin 2). No constant margin and no constant fraction explains both; the two points do lie on one line, and the primitive uses it (fillSlope = -1, fillBase = 32).",
+    "Row 0 is a DEFECT, and it is the one thing not to clone. unga_power_fill_0_main is a 400 px fill inside a 400 px track at x = 242, so it paints 4 px over the track's right border. Every other ranking fill caps at 396. The primitive reports bar-fill-overflows-track (error) and clamps.",
+    "Two DIFFERENT sprites are load-bearing. A dark 9-slice tile under a white 3x3 tile. With one sprite the construction is a tinted box.",
+    "vanilla: the 41-keyword element list above, over 177 .gui files; progressbarType and its two other spellings occur 195 times, all inside .gfx, and 0 times in interface/**/*.gui or interface/**/*.txt. docs/gui-pitfalls.md:720-740.",
+    "vanilla: vanilla's own progress_bar elements are iconTypes drawing an engine-driven sprite — interface/anomaly_view.gui:339-343, archaeology_view.gui:365, astral_rift_view.gui:345. docs/gui-pitfalls.md:737-740.",
+    "measured: the transcription table above, read field by field out of zz_geocentric_unga.gui's unga_chart_main subtree (:190-384, rows at :311-324, :325-339, :340-354, :355-369, :370-384; band :190-203; heading :204-218; legend :219-227). docs/gui-pitfalls.md:750-765.",
+    "vanilla: GFX_tiles_dark_area_cut_8 is a corneredTileSpriteType with borderSize = { x=8 y=8 } and an effectFile shader at interface/fleet_view.gfx:2824-2830; gfx_transparency_white is a 3x3 corneredTileSpriteType with borderSize = { x=1 y=1 } at interface/core.gfx:119-124. docs/gui-pitfalls.md:758-762.",
+    "measured: the same construction appears six more times in the same file with the same two sprites and the same 2 px inset — vote tally 400x18 track with a 248x14 fill at +2, and three 1116x18 bloc-standing tracks with 801 / 712 / 456 x14 fills at +2 — which is what makes it the project's idiom rather than one author's accident. docs/gui-pitfalls.md:773-781.",
+    "measured: unga_power_fill_0_main at :257-271 is a 400 px fill in a 400 px track at x = 242, painting 4 px over the track's right border; every other ranking fill caps at 396. docs/gui-pitfalls.md:791-794.",
+    "measured: the transcription is checked in the suite — the \"C1\" group re-reads the mod file and checks EVERY line range and EVERY literal of the transcription against it, compares the expansion to the transcription field for field, and carries a fail-if-removed guard over the module's own source text. That guard is not decoration: an earlier revision contained two elements that do not exist anywhere in the file (unga_att_un_value_nato, unga_att_stab_value_nato), and the name check is what keeps them gone. docs/gui-pitfalls.md:856-866.",
+    "measured: the value column's width and gap are valueWidth / valueGap (the short role name, like rowLabel / seats), NOT valueTextWidth / valueTextGap. readColumn(node, 'valueText', ...) used to derive both names from the one string it was given and a caller who passed valueWidth: 170 got the 70 px default with no error (GAP-6). The node key and the field prefix are now separate parameters so they cannot drift, and using an old spelling raises bar-field-deprecated. docs/gui-pitfalls.md:953-966.",
+    "measured: bar-track-misaligned-with-heading exists because a ranking band reads as a table, and NOTHING OVERLAPS when a track does not start at the same x as its heading — which is why no geometric rule catches it. The reference shows the shape that makes it non-trivial: the caption sits at x = 22 over a name column at x = 26, in a DIFFERENT container from the rows' tracks at x = 240. docs/gui-pitfalls.md:868-876."
+]
+
+rules = [
+    "a bar's fill length is derived from value / max and written as a pixel literal. A percentage or an @variable width is REFUSED (bar-track-width-not-static) rather than resolved to something that would silently break the inset invariant;",
+    "value > max is REFUSED (bar-fill-overflows-track), not quietly clamped to a bar that looks full;",
+    "a live number is asked for with labelEffect / effect and becomes an effectbuttonType carrying buttonText (see the text-channels topic);",
+    "trackColour / fillColour are REFUSED (bar-colour-not-exist), because a .gui container has NO colour field. The engine tints TEXT through text_color_code, and a sprite may name an effectFile shader; a window element has neither. Two real options: a different tile sprite, or a shader.",
+    "Build a bar from gui_bar_spec / the bar component; do not hand-place a track and a fill. The component is the transcription, and gui_bar_spec returns the whole API table.",
+    "A bar's position is the TRACK's top-left corner. The name column is the only negative x in the construction, so a bar placed where the old code put its track stays where it was.",
+    "Fill length comes from value / max — never from a percentage and never from the import's own value.",
+    "Refuse value > max; do not clamp silently.",
+    "There is no colour field. Use a different tile sprite or a sprite with an effectFile shader.",
+    "Ask for a live number with effect (+ labelEffect), not by putting a bracket call in painted text.",
+    "Watch the asymmetry in the field names: value is the NUMBER, valueText is the value column's TEXT; valueWidth / valueGap are the column's width and gap.",
+    "Do not clone row 0 of the reference. It is the one measured defect in the construction, and the primitive reports it rather than reproducing it."
+]
+
+breaks = []
+
+relationships = [
+    "text-channels",
+    "transparency-white-plate",
+    "control-visibility-is-a-potential"
+]
+
+source_refs = [
+    "<mods>/geocentric_origin/interface/zz_geocentric_unga.gui",
+    "<Stellaris>/interface/fleet_view.gfx",
+    "<Stellaris>/interface/core.gfx"
+]
+
+title_zh = "进度条是画出来的，不是声明出来的——而且这张图是逐行抄录的"
+
+verified_version = "Stellaris 4.4.6 \"Pegasus\""

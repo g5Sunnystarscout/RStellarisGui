@@ -1,0 +1,604 @@
+{
+  "generatedBy": "node scripts/kind-census.mjs",
+  "root": "<Stellaris>",
+  "version": "v4.4.6",
+  "fileCount": 177,
+  "parseFailures": [],
+  "rootKeywords": {
+    "guiTypes": 147,
+    "@dynamic_extra": 12,
+    "@view_w": 4,
+    "@tab_height": 3,
+    "@movable_editors": 2,
+    "@sort_button_height": 1,
+    "@view_container_w": 1,
+    "@frame_list_w": 1,
+    "@SituationEventElementHeight": 1,
+    "@entry_info_height": 1,
+    "@trait_icon_size_h": 1,
+    "@accountlogin_title_font": 1,
+    "@entries_row1_y": 1,
+    "@trait_icon_size_w": 1
+  },
+  "filesWithVariables": 30,
+  "elementUses": 12801,
+  "topLevelContainers": 1197,
+  "sizeValueForms": {
+    "static": 4929,
+    "percent": 366,
+    "doublePercent": 20,
+    "negative": 50,
+    "variable": 449,
+    "other": 0
+  },
+  "kindCount": 19,
+  "emittableKinds": [
+    "container",
+    "text",
+    "icon",
+    "button",
+    "effectbutton",
+    "gridBox",
+    "smoothListBox",
+    "listBox",
+    "overlappingElementsBox",
+    "guiButton",
+    "scrollbar",
+    "editBox",
+    "checkbox",
+    "spinner",
+    "window",
+    "dropDownBox"
+  ],
+  "componentKinds": [
+    "matrix",
+    "bar"
+  ],
+  "kinds": [
+    {
+      "kind": "container",
+      "keyword": "containerWindowType",
+      "emitter": true,
+      "sizeForm": "size-width-height",
+      "acceptedSizeForms": [
+        "width/height",
+        "(empty)",
+        "width"
+      ],
+      "uses": 3305,
+      "keywords": {
+        "containerWindowType": 3305
+      },
+      "examples": [
+        "interface/achievements_view.gui:2",
+        "interface/achievements_view.gui:58",
+        "interface/achievements_view.gui:71"
+      ],
+      "topFields": {
+        "name": 3305,
+        "instantTextBoxType = { }": 3151,
+        "size = { }": 2924,
+        "iconType = { }": 2736,
+        "position = { }": 2731,
+        "containerWindowType = { }": 2373,
+        "buttonType = { }": 2053,
+        "background = { }": 1636,
+        "orientation": 542,
+        "moveable": 457,
+        "clipping": 452,
+        "gridBoxType = { }": 244
+      }
+    },
+    {
+      "kind": "text",
+      "keyword": "instantTextBoxType",
+      "emitter": true,
+      "sizeForm": "maxWidth/maxHeight",
+      "acceptedSizeForms": [],
+      "uses": 3220,
+      "keywords": {
+        "instantTextBoxType": 3202,
+        "InstantTextBoxType": 11,
+        "instantTextboxType": 5,
+        "textboxType": 1,
+        "textBoxType": 1
+      },
+      "examples": [
+        "interface/achievements_view.gui:13",
+        "interface/achievements_view.gui:41",
+        "interface/achievements_view.gui:49"
+      ],
+      "topFields": {
+        "font": 3224,
+        "name": 3220,
+        "position = { }": 3201,
+        "maxwidth": 3156,
+        "maxheight": 2908,
+        "format": 2644,
+        "text": 2511,
+        "fixedsize": 1882,
+        "alwaystransparent": 1234,
+        "orientation": 900,
+        "text_color_code": 780,
+        "vertical_alignment": 281
+      }
+    },
+    {
+      "kind": "icon",
+      "keyword": "iconType",
+      "emitter": true,
+      "sizeForm": "none",
+      "acceptedSizeForms": [],
+      "uses": 2779,
+      "keywords": {
+        "iconType": 2778,
+        "IconType": 1
+      },
+      "examples": [
+        "interface/achievements_view.gui:35",
+        "interface/additional_content/additional_content.gui:154",
+        "interface/additional_content/additional_content.gui:161"
+      ],
+      "topFields": {
+        "name": 2779,
+        "position = { }": 2613,
+        "spritetype": 2006,
+        "alwaystransparent": 1473,
+        "quadtexturesprite": 773,
+        "scale": 634,
+        "orientation": 312,
+        "centerposition": 274,
+        "frame": 235,
+        "tooltip_mode_enabled": 89,
+        "pdx_tooltip": 50,
+        "rotation": 13
+      }
+    },
+    {
+      "kind": "button",
+      "keyword": "buttonType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 2067,
+      "keywords": {
+        "buttonType": 2065,
+        "ButtonType": 2
+      },
+      "examples": [
+        "interface/achievements_view.gui:25",
+        "interface/additional_content/additional_content.gui:177",
+        "interface/additional_content/additional_content.gui:207"
+      ],
+      "topFields": {
+        "name": 2067,
+        "position = { }": 1967,
+        "quadtexturesprite": 1296,
+        "orientation": 867,
+        "clicksound": 812,
+        "spritetype": 771,
+        "shortcut": 514,
+        "buttonfont": 513,
+        "font": 494,
+        "buttontext": 470,
+        "size = { }": 450,
+        "pdx_tooltip": 413
+      }
+    },
+    {
+      "kind": "gridBox",
+      "keyword": "gridBoxType",
+      "emitter": true,
+      "sizeForm": "size-width-height",
+      "acceptedSizeForms": [
+        "width/height",
+        "width"
+      ],
+      "uses": 260,
+      "keywords": {
+        "gridBoxType": 256,
+        "gridboxType": 4
+      },
+      "examples": [
+        "interface/additional_content/additional_content.gui:264",
+        "interface/additional_content/additional_content.gui:331",
+        "interface/additional_content/additional_content.gui:339"
+      ],
+      "topFields": {
+        "name": 260,
+        "position = { }": 228,
+        "format": 227,
+        "max_slots_horizontal": 226,
+        "size = { }": 163,
+        "slotSize = { }": 133,
+        "slotsize = { }": 123,
+        "max_slots_vertical": 78,
+        "add_horizontal": 77,
+        "padding = { }": 15,
+        "orientation": 14,
+        "background = { }": 6
+      }
+    },
+    {
+      "kind": "smoothListBox",
+      "keyword": "smoothListBoxType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 243,
+      "keywords": {
+        "smoothListboxType": 138,
+        "smoothListBoxType": 105
+      },
+      "examples": [
+        "interface/agreement_negotiation_view.gui:137",
+        "interface/agreement_negotiation_view.gui:200",
+        "interface/alliance_view.gui:162"
+      ],
+      "topFields": {
+        "name": 243,
+        "size = { }": 242,
+        "position = { }": 233,
+        "scrollbartype": 216,
+        "spacing": 156,
+        "orientation": 141,
+        "borderSize = { }": 141,
+        "background": 47,
+        "autohide_scrollbar": 44,
+        "priority": 24,
+        "alwaystransparent": 21,
+        "dynamic_extra_height": 20
+      }
+    },
+    {
+      "kind": "position",
+      "keyword": "positionType",
+      "emitter": false,
+      "sizeForm": "none",
+      "acceptedSizeForms": [],
+      "uses": 233,
+      "keywords": {
+        "positionType": 233
+      },
+      "examples": [
+        "interface/additional_content/additional_content.gui:2",
+        "interface/additional_content/additional_content.gui:8",
+        "interface/additional_content/additional_content.gui:15"
+      ],
+      "topFields": {
+        "name": 233,
+        "position = { }": 232,
+        "dynamic_extra_height": 4,
+        "if_scaled_resolution = { }": 1
+      }
+    },
+    {
+      "kind": "guiButton",
+      "keyword": "guiButtonType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 198,
+      "keywords": {
+        "guiButtonType": 198
+      },
+      "examples": [
+        "interface/additional_content/additional_content.gui:838",
+        "interface/additional_content/additional_content.gui:842",
+        "interface/additional_content/additional_content.gui:1036"
+      ],
+      "topFields": {
+        "name": 198,
+        "quadtexturesprite": 192,
+        "position = { }": 166,
+        "buttonfont": 29,
+        "buttontext": 26,
+        "tooltip": 23,
+        "tooltiptext": 23,
+        "delayedtooltiptext": 23,
+        "orientation": 19,
+        "clicksound": 18,
+        "parent": 10,
+        "spritetype": 6
+      }
+    },
+    {
+      "kind": "overlappingElementsBox",
+      "keyword": "OverlappingElementsBoxType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 188,
+      "keywords": {
+        "OverlappingElementsBoxType": 134,
+        "overlappingElementsBoxType": 54
+      },
+      "examples": [
+        "interface/archaeology_view.gui:114",
+        "interface/archaeology_view.gui:659",
+        "interface/archaeology_view.gui:665"
+      ],
+      "topFields": {
+        "name": 188,
+        "position = { }": 188,
+        "size = { }": 188,
+        "format": 123,
+        "spacing": 86,
+        "first_on_top": 19,
+        "orientation": 18,
+        "direction": 1
+      }
+    },
+    {
+      "kind": "editBox",
+      "keyword": "editBoxType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 85,
+      "keywords": {
+        "editBoxType": 85
+      },
+      "examples": [
+        "interface/browser_dialog.gui:82",
+        "interface/chat.gui:55",
+        "interface/chat.gui:65"
+      ],
+      "topFields": {
+        "name": 85,
+        "font": 85,
+        "size = { }": 85,
+        "position = { }": 84,
+        "orientation": 51,
+        "texturefile": 44,
+        "text": 44,
+        "instanttextboxtype": 42,
+        "borderSize = { }": 42,
+        "cursor = { }": 27,
+        "max_characters": 21,
+        "allow_multi_line": 4
+      }
+    },
+    {
+      "kind": "checkbox",
+      "keyword": "checkboxType",
+      "emitter": true,
+      "sizeForm": "none",
+      "acceptedSizeForms": [],
+      "uses": 77,
+      "keywords": {
+        "checkboxType": 77
+      },
+      "examples": [
+        "interface/additional_content/additional_content.gui:190",
+        "interface/ascension_perks_view.gui:64",
+        "interface/colonize_planet_view.gui:873"
+      ],
+      "topFields": {
+        "name": 77,
+        "position = { }": 69,
+        "quadtexturesprite": 51,
+        "spritetype": 26,
+        "pdx_tooltip": 18,
+        "orientation": 8,
+        "clicksound": 7,
+        "oversound": 2,
+        "shortcut": 1,
+        "scale": 1
+      }
+    },
+    {
+      "kind": "listBox",
+      "keyword": "listBoxType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 43,
+      "keywords": {
+        "listboxType": 35,
+        "listBoxType": 8
+      },
+      "examples": [
+        "interface/browser_dialog.gui:66",
+        "interface/chat.gui:31",
+        "interface/chat.gui:43"
+      ],
+      "topFields": {
+        "name": 43,
+        "position = { }": 43,
+        "size = { }": 43,
+        "scrollbartype": 41,
+        "orientation": 29,
+        "spacing": 25,
+        "borderSize = { }": 20,
+        "background": 17,
+        "alwaystransparent": 10,
+        "priority": 3,
+        "horizontal": 2,
+        "autohide_scrollbar": 2
+      }
+    },
+    {
+      "kind": "spinner",
+      "keyword": "spinnerType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 40,
+      "keywords": {
+        "spinnerType": 40
+      },
+      "examples": [
+        "interface/additional_content/additional_content.gui:824",
+        "interface/additional_content/additional_content.gui:1022",
+        "interface/customize_species_editors.gui:1273"
+      ],
+      "topFields": {
+        "guiButtonType = { }": 80,
+        "name": 40,
+        "leftbutton": 40,
+        "rightbutton": 40,
+        "size = { }": 40,
+        "position = { }": 40,
+        "borderSize = { }": 40,
+        "horizontal": 40,
+        "priority": 39,
+        "maxvalue": 39,
+        "startvalue": 39,
+        "id": 37
+      }
+    },
+    {
+      "kind": "scrollbar",
+      "keyword": "scrollbarType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y",
+        "width/height"
+      ],
+      "uses": 24,
+      "keywords": {
+        "scrollbarType": 18,
+        "extendedScrollbarType": 5,
+        "scrollbartype": 1
+      },
+      "examples": [
+        "interface/agreement_negotiation_view.gui:1079",
+        "interface/core.gui:156",
+        "interface/core.gui:200"
+      ],
+      "topFields": {
+        "guiButtonType = { }": 77,
+        "name": 24,
+        "size = { }": 24,
+        "position = { }": 24,
+        "startvalue": 24,
+        "horizontal": 21,
+        "slider": 19,
+        "track": 19,
+        "leftbutton": 19,
+        "rightbutton": 19,
+        "maxvalue": 19,
+        "minvalue": 19
+      }
+    },
+    {
+      "kind": "window",
+      "keyword": "windowType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 24,
+      "keywords": {
+        "windowType": 24
+      },
+      "examples": [
+        "interface/browser_dialog.gui:95",
+        "interface/chat.gui:3",
+        "interface/chat.gui:77"
+      ],
+      "topFields": {
+        "guiButtonType = { }": 40,
+        "instantTextBoxType = { }": 40,
+        "name": 24,
+        "size = { }": 23,
+        "iconType = { }": 22,
+        "position = { }": 20,
+        "moveable": 19,
+        "background": 18,
+        "dontrender": 18,
+        "horizontalborder": 18,
+        "verticalborder": 18,
+        "fullscreen": 18
+      }
+    },
+    {
+      "kind": "dropDownBox",
+      "keyword": "dropDownBoxType",
+      "emitter": true,
+      "sizeForm": "size-width-height",
+      "acceptedSizeForms": [
+        "width/height"
+      ],
+      "uses": 13,
+      "keywords": {
+        "dropDownBoxType": 13
+      },
+      "examples": [
+        "interface/customize_species_editors.gui:2354",
+        "interface/databank_window.gui:174",
+        "interface/diplomacy_view.gui:1439"
+      ],
+      "topFields": {
+        "name": 13,
+        "position = { }": 13,
+        "size = { }": 13,
+        "expandedWindow = { }": 13,
+        "instantTextBoxType = { }": 11,
+        "iconType = { }": 9,
+        "background = { }": 6,
+        "expandButton = { }": 6,
+        "buttonType = { }": 5,
+        "orientation": 3,
+        "clipping": 2
+      }
+    },
+    {
+      "kind": "effectbutton",
+      "keyword": "effectbuttonType",
+      "emitter": true,
+      "sizeForm": "size-x-y",
+      "acceptedSizeForms": [
+        "x/y"
+      ],
+      "uses": 2,
+      "keywords": {
+        "effectbuttonType": 2
+      },
+      "examples": [
+        "interface/fleet_view.gui:708",
+        "interface/fleet_view.gui:1785"
+      ],
+      "topFields": {
+        "name": 2,
+        "position = { }": 2,
+        "size = { }": 2,
+        "quadtexturesprite": 2,
+        "font": 2,
+        "buttontext": 2,
+        "tooltiptext": 2,
+        "delayedtooltiptext": 2,
+        "effect": 2,
+        "clicksound": 2
+      }
+    }
+  ],
+  "unknownElementKeywords": {},
+  "assets": {
+    "spriteCount": 9197,
+    "fontCount": 13,
+    "containerCount": 2436,
+    "buttonEffectCount": 2,
+    "gfxFileCount": 131,
+    "guiFileCount": 177,
+    "distinctTextureCount": 6883,
+    "textureHeaderReads": 6866
+  }
+}

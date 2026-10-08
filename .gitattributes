@@ -1,0 +1,17 @@
+# Source is LF everywhere; the tools are Node and the shell is not the target.
+* text=auto eol=lf
+
+# Windows batch files, if any, must keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets by extension, so git never tries to diff or merge them.
+*.png binary
+*.zip binary
+*.dds binary
+*.ttf binary
+
+# Generated knowledge: readable, but noisy in a diff.
+src/generated/knowledge.mjs linguist-generated=true
+resources/knowledge/** linguist-generated=true
+docs/kind-census.json linguist-generated=true

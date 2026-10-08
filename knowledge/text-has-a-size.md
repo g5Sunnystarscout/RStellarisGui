@@ -1,0 +1,143 @@
+---
+id: text-has-a-size
+category: text
+title: Text has a size, and the box is not it - the engine's own font metrics
+title_zh: 文字有尺寸，而框不是尺寸——用引擎自己的字体度量
+summary: maxWidth/maxHeight are the budget the engine lays text out IN, not the size of the text. The install ships the engine's own per-glyph metrics (gfx/fonts/*.fnt BMFont descriptors, plus a per-language TrueType override in interface/fonts.gfx), so advances are exact and wrapping is modelled per script. The 0.55em heuristic this replaces had a 39 px median error and made 75% of its overflow claims falsely.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.gui, .fnt, .gfx, .yml]
+tags: [font, metrics, xadvance, kerning, BMFont, ttf_font, ttf_size, maxWidth, wrapping, CJK, text-overflow, text-collision]
+related: [text-channels, per-kind-size-and-field-forms]
+sources: [<Stellaris>/interface/fonts.gfx, <Stellaris>/fonts/fonts.asset]
+---
+
+## What it is
+
+Every "visual overlap" and "text overflow" finding built on ELEMENT RECTS is a statement about boxes.
+Two 1116 px-wide label fields overlap by definition while their 105 px and 297 px strings are nowhere
+near each other; a 184 px-wide news wire whose string wraps into 24 lines reaches 257 px past the
+bottom of its 124 px box and lands on the panel below — and the box model cannot see that at all.
+
+So the plugin measures the rendered string from **the engine's own font data**, one code path
+(`src/lib/font-metrics.mjs`) shared by the validator, the preview and the rect table.
+
+## Where the real metrics live
+
+* `gfx/fonts/*.fnt` are AngleCode **BMFont text descriptors**: per-glyph `xadvance`, `xoffset`,
+  `yoffset`, `width`, `height`, plus `lineHeight` / `base` / `scaleW` / `scaleH` and real `kerning`
+  pairs. The engine parses exactly those records — `stellaris.exe` carries the token list
+  `lineHeight` / `chars` / `base` / `scaleH` / `scaleW` / `char` / `kerning` from
+  `pdx_oldgui/graphics/bitmapfont.cpp`.
+* `interface/fonts.gfx` binds a font NAME to those files (`bitmapfont { name = "cg_16b" fontfiles = ... }`)
+  and — the part that decides the whole approach — **replaces the bitmap font with a real TrueType
+  font per language**.
+* `fonts/fonts.asset` resolves the TTF name to a file, so a `ttf_font`/`ttf_size` override is measured
+  from the font's own `hmtx` advance table scaled by `ttf_size / unitsPerEm`, via `cmap` format 12.
+
+There is **no** `documentation/` folder in the install and **no** `GetTextSize` / `MeasureText` /
+`CalcTextSize` / `GetStringWidth` string in the binary: the engine measures text, but it does not
+expose the measurement.
+
+## Syntax
+
+```
+# gfx/fonts/cg_16b.fnt - the descriptor the engine loads
+# :2   common lineHeight=16 base=13 scaleW=256 scaleH=256 pages=1
+# :4   char id=33 x=182 y=146 width=9 height=16 xoffset=-3 yoffset=0 xadvance=4 page=0
+# juralightmedium.fnt carries 6744 `kerning first= second= amount=` records; standard.fnt 326;
+# malgun_goth_24.fnt 222.
+
+# interface/fonts.gfx - the per-language override. THIS is why one advance table is wrong for both.
+bitmapfont = { name = "cg_16b" fontfiles = { "gfx/fonts/cg_16b" } cursor_offset = { -3 -5 } }        # :168-177
+bitmapfont_override = { name = "cg_16b" ttf_font = "Easter_normal" ttf_size = "13"
+	languages = { "l_russian" "l_polish" } }                                                          # :187-192
+bitmapfont_override = { name = "cg_16b" ttf_font = "Chinese_normal" ttf_size = "14"
+	languages = { "l_simp_chinese" } }                                                                # :194-204
+
+# fonts/fonts.asset :19-26 resolves that name to a 16 MB OpenType file with a real hmtx table:
+#   Chinese_normal -> gfx/fonts/NotoSansCJKsc-Regular.otf
+#   head.unitsPerEm = 1000, hhea.ascender = 1160, numberOfHMetrics = 65507
+
+# interface/fonts.gfx :87-88 - the CJK line-break lists the wrapper reads for the language
+line_break = { "。" "）" "！" ... }
+forbidden_start = { "，" }
+```
+
+## The exactness statement
+
+> **Text extent: EXACT for bitmap fonts, EXACT advances for TrueType overrides.**
+> Width is the sum of the engine's own per-glyph advances (plus kerning) from the descriptor the
+> engine loads for that font name *and language*; it is not fitted and not averaged.
+> Line height is EXACT for bitmap fonts (`common lineHeight=`) and DERIVED for TrueType overrides
+> (`hhea` ascender − descender + lineGap, the quantity FreeType reports as `metrics.height`; the
+> OS/2 typographic and Windows alternatives are reported alongside).
+> **Wrapping: modelled per script; wrap width = the element's `maxWidth`, measured with no extra
+> inset.**
+> Residual uncertainty: (a) inline `£icon£` tokens and unresolved `$SCOPE$` tokens contribute no
+> width and are listed per element, so those measurements are a LOWER BOUND; (b) a character the
+> descriptor does not contain is charged the font's average advance and listed; (c) two shipped
+> generations of the same face at the same size differ by at most **2 px** on a single glyph advance
+> (`cg_16b.fnt` vs the retired `stellaris_main.fnt`), which bounds any engine-side rounding;
+> (d) `GPOS`-only kerning is not applied — a sub-pixel effect on Latin, zero on CJK.
+
+## Height, the part that had to be calibrated
+
+Two numbers, because the engine uses two:
+
+* `budgetHeight = (lines - 1) * lineHeight + base` — what `maxHeight` is compared against;
+* `height` — the glyph INK, taken per glyph from the descriptor's `yoffset` / `height`, which is the
+  DRAWN rect and therefore what can collide with the row below.
+
+Measured over **839 vanilla text elements** carrying both fields: the ascent-band model fits the
+declared `maxHeight` for **94.3%** of them; the naive `lines * lineHeight` fits only **71.2%**. The gap
+is in the content — **20.2%** of vanilla's single-line text elements declare `maxHeight` exactly equal
+to the font's own `base` (e.g. `malgun_goth_24`: 20 px, not 24 px) and **29.1%** declare less than one
+`lineHeight`. Reporting ink-versus-`maxHeight` instead would flag 259 of those 839 vanilla elements: a
+rule nobody would read.
+
+## Why not calibrate an average advance
+
+It was measured and it is not good enough. Fitting a per-font average advance on 80% of a sample of
+835 vanilla text elements and testing on the held-out 20% (`node scripts/text-metrics-audit.mjs`):
+
+| predictor | mean error | median error | p95 error | false "overflows" | missed overflows | verdict agreement |
+|---|---|---|---|---|---|---|
+| `0.55em` from the number in the font name (the old heuristic) | 48.0 px | 39.0 px | 134.0 px | 15 | 0 | 91.0% |
+| per-font average advance, fitted on the fit set only | 10.1 px | 6.7 px | 24.0 px | 2 | 0 | 98.8% |
+| the engine's own `.fnt` advances (what is implemented) | 0 | 0 | 0 | 0 | 0 | 100% |
+
+The old heuristic's error is not random: it is `0.55 x the digits in the font name`, so `cg_16b` gets
+8.8 px/char when the descriptor says 6.15, and `jura` — whose name contains no digits at all — gets
+8.8 px/char when the descriptor's own `lineHeight` is 48. Over the whole vanilla sample it claimed 121
+overflows where the exact metrics find 30: **91 of its 121 overflow claims (75%) are false**, and it
+misses 0.
+
+## Evidence
+
+- `vanilla`: `gfx/fonts/cg_16b.fnt:2` is `common lineHeight=16 base=13 scaleW=256 scaleH=256 pages=1` and `:4` is `char id=33 x=182 y=146 width=9 height=16 xoffset=-3 yoffset=0 xadvance=4 page=0`. `docs/gui-pitfalls.md:453-455`.
+- `vanilla`: `juralightmedium.fnt` carries 6744 `kerning` records, `standard.fnt` 326, `malgun_goth_24.fnt` 222. `docs/gui-pitfalls.md:456-457`.
+- `binary`: `stellaris.exe` carries the token list `lineHeight` / `chars` / `base (%d) in '%s' does not match previous fontfiles in font '%s'` / `lineHeight (%d) ... does not match` / `scaleH` / `scaleW` / `char` / `kerning` from `pdx_oldgui/graphics/bitmapfont.cpp`. `docs/gui-pitfalls.md:468-472`.
+- `binary`: there is NO `GetTextSize` / `MeasureText` / `CalcTextSize` / `GetStringWidth` string in the binary, so the engine does not expose its measurement. `docs/gui-pitfalls.md:472-474`.
+- `vanilla`: the descriptor belongs to the shipped atlas — for all 12 `.fnt` files `scaleW`/`scaleH` equals the dimensions of the `.dds`/`.tga` beside it, and decoding `gfx/fonts/cg_16b.dds` at the coordinates `cg_16b.fnt` gives `char id=72` (`H`) prints an unmistakable `H`. The units are layout pixels: `interface/fonts.gfx:175` declares `cursor_offset = { -3 -5 }` for `cg_16b`, and every glyph in `cg_16b.fnt` carries `xoffset=-3`. `docs/gui-pitfalls.md:475-479`.
+- `vanilla`: `interface/fonts.gfx:187-204` is the per-language TTF override; `fonts/fonts.asset:19-26` resolves `Chinese_normal` to `gfx/fonts/NotoSansCJKsc-Regular.otf` (`head.unitsPerEm = 1000`, `hhea.ascender = 1160`, `numberOfHMetrics = 65507`). So `font = "cg_16b"` is a 16 px bitmap in English and a 14 px Noto Sans CJK in Simplified Chinese. `docs/gui-pitfalls.md:460-467`.
+- `measured`: the held-out error table above; reproduce with `node scripts/text-metrics-audit.mjs`. `docs/gui-pitfalls.md:537-553`.
+- `measured`: on the working six-window mod, `node scripts/text-overflow-report.mjs` finds 20 `text-overflow` (all vertical) in English and 40 in Chinese, and 37 / 53 `text-collision`, of which **37 of 37 and 53 of 53 had boxes that never overlapped** — no box rule could ever have found them. 229 / 229 and 217 / 217 text elements were measured exactly. `docs/gui-pitfalls.md:572-592`.
+- `measured`: the dominant real defect is a wrapped block growing out of its box. `unga_news_wire_main` is 184x387 over 24 lines in a 184x124 box, **+257 px**, colliding with 14 elements of the standing panel. `docs/gui-pitfalls.md:623-629`.
+
+## Rules
+
+- Measure text; never infer its size from the element's box. `maxWidth` / `maxHeight` are the budget, not the text.
+- Pass `languages: ["simp_chinese"]` (or the language you ship) when measuring a translated mod. The advance table differs per language for the same font name, and using the English one for Chinese is wrong in both directions.
+- `text-overflow` means the rendered string does not fit. `textOverflow: 'horizontal'` means a run with no legal break is wider than `maxWidth`; `'vertical'` means the block needs more lines than `maxHeight` allows — the defect that puts text on top of the row below.
+- `text-collision` means two elements' RENDERED text really intersects. `wrapInduced: true` means their boxes do not intersect at all.
+- `sibling-overlap` compares measured ink wherever a string resolved, so a pair of boxes that overlap without the text reaching each other is no longer reported. The report carries `textMeasurement.overlapBreakdown` so the number of box artefacts suppressed is visible rather than implied.
+- `format` (left/center/right) moves the drawn block; it does NOT change the wrap width.
+- Wrap width is `maxWidth` with **no extra inset**. The `.fnt`'s own `padding=3,3,3,3` is already baked into each glyph's `xoffset=-3`, so subtracting it again would double-count.
+- `textMeasured: false` in a report means nothing was measured (no localisation values, or no font catalogue) and the box rules ran exactly as before. A green verdict with `textMeasured: false` is NOT evidence about text.
+
+## 待确认
+
+- `dynamic_extra_height`'s arithmetic. Neither vanilla's 177 `.gui` files nor the working mod uses it, so the "extra available height" reading is from the field name and from its coupling with `dynamic_extra_height_max` / `dynamic_extra_y`, not from a measurement. An in-game test would settle it.
+- Whether the engine breaks inside a word wider than `maxWidth`. The model overflows the line, and vanilla contains no case that distinguishes the two — its over-wide strings all contain spaces.
+- The engine's own rounding of accumulated float advances. Bounded by the 2 px disagreement between two shipped generations of the same face, and sub-pixel in practice, but not directly observable.
+- Inline `£icon£` widths: resolvable from the sprite index, not currently wired, so they are listed per element and charge zero width.

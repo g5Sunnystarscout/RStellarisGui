@@ -1,0 +1,246 @@
+---
+id: positiontype-is-a-global-named-anchor
+category: contract
+title: `positionType` is a GLOBAL named anchor the engine looks up - and this project's earlier "0 names are referenced" was FALSE
+title_zh: `positionType` 是引擎按名字查的全局锚点——本项目早先「0 个名字被引用」的说法是错的，已撤回
+summary: interface/**/*.gui declare 233 positionType blocks (224 under a stricter line-based rule), and this project used to say that no name is referenced anywhere else. That claim is FALSE and is retired here. The names are global anchors - 163 of the 224 line-rule names occur as contiguous literals in stellaris.exe, which is why a grid box's slot size is set by compiled code reading a name - and six names occur in another file, one of them in a plain comment in which the install states the mechanism. A mod that wants to move an anchor therefore cannot edit one value: there is no reference syntax, so it must replace the whole .gui, because two mods on the same path are a whole-file replacement and not a merge. The half that was left open - "the engine READ my file" was measured, "the engine USED the number" was not - is now CLOSED BY OBSERVATION: on 2026-10-06 a human re-pointed `pause_bg_animation_speed` from {500, 2000} to {15, 1234} and watched the pause indicator's rolling glow get SLOWER, the direction the numbers predict under the speed reading, so the engine uses the number and not merely reads the file. That same observation retires the earlier speculation that the pair is a period rather than a speed.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.gui]
+tags: [positionType, global-name, named-anchor, correction, retired-claim, override, whole-file, engine-lookup, binary]
+related: [engine-populated-containers, per-kind-size-and-field-forms, host-gui-surface, dlc-panels-are-engine-views, engine-capability-vs-usage]
+sources: [<clone>/unga-fix/DOORS-RESULTS.md, <Stellaris>/interface, <Stellaris>/stellaris.exe, <clone>/RStellarisGui/docs/kind-census.json, <mods>/gui_probe_scratch/positiontype-census.mjs, <mods>/gui_probe_scratch/positiontype-vs-exe.mjs]
+---
+
+## What it is
+
+A `positionType` block is a **named anchor**: the file declares a name and a value, and the engine's
+C++ asks for that name. It is the same contract as an element name (`window-name-contract`), one level
+up - and this project got one half of it wrong for several rounds.
+
+**The correction.** This project's earlier claim was:
+
+> "233 `positionType` blocks, all of which declare only `name` + `position`, and **0 of the names are
+> referenced anywhere else** in the corpus; the name is looked up from C++ and the strings are literal
+> in `stellaris.exe`."
+
+The reference clause is **false** and the "only name + position" clause is wrong by five blocks. The
+in-game probe round of 2026-10-06 re-measured the same corpus with its own script and found:
+
+| figure | value | what it is |
+| --- | --- | --- |
+| blocks | **224** | `positionType` declarations whose block opens on its own line, which is the probe's line-based rule (`positiontype-census.mjs`). This project's own PARSE-based count of the same corpus is **233**; the nine-block difference is declarations written on one line (`topbar_traditions_view.gui:22-29` - eight `positionType = { name = "ap_N" position = { ... } }` one-liners) or with the brace on the following line (`ship_designer.gui:43`). Both figures are kept, and both are pinned in `scripts/selftest.mjs`. |
+| names referenced elsewhere | **14** | at least 14 names also occur in another file of `interface/**`. The wave's rule was a plain substring count, so **part of that 14 is collision, not reference**: `background_bar_size` (`first_contact_view.gui:4`) is matched inside `rune_background_bar_size` (`archaeology_view.gui:4`) and `rift_progress_background_bar_size_controller` (`astral_rift_view.gui:5`), and `event_option_offset` (`eventwindow.gui:352`) is named only in a comment in `leader_story_event_window.gui`. An exhaustive EXACT-WORD pass run for this topic over the 220 distinct line-rule names returns **6**: `ship_designer` (declared `ship_designer.gui:74`, named in 9 other files), `ship_browser_3d_view_size` (`customize_species_editors.gui:8`, named in `customize_species_shipsets.gui:21`), the two `situation_log_size_*` (`situation_log.gui:96` / `:108`, named in `databank_window.gui:8`), and the two `waroverview_side_participants_list_size_with*` (`waroverview.gui:1097` / `:1101`, named in `war_goals_view.gui:117` / `:201`). **Five of those six are comments** - and one of them is the install stating this very mechanism in its own words (`customize_species_shipsets.gui:21`). So the number that matters for a modder is not "0" and not "14": **a `positionType` name is global, the engine overrides elements from it BY NAME, and a mod re-pointing one is not the only file that names it.** |
+| names that are exe literals | **163 of 224** | matched with `Buffer.indexOf(name, 0, 'latin1')` - a contiguous byte run - which is why the claim "the engine looks these up by name" stands: e.g. `pause_bg_animation_speed` at exe offset **39417440**, sitting between `pause_bg_stop` and `pause_bg`, and `situation_log_size_default` / `_focus` adjacent at **39375056**. `event_option_offset` at **39441904** sits next to the source-path literal `...\source\graphics\eventwindow.cpp`. (A parse-based pass over all 233 names finds 161, because two of the nine extra one-line declarations - `ap_0` and `first_stat_position` - happen to be literal strings in the binary for other reasons. The 163/224 pair is the one to quote: same rule for both halves.) |
+
+**Why it matters, and the one place it changes a rule.** The plugin models `positionType` as
+`kind-not-emittable`, and that is still right - a mod cannot invent an anchor the engine will ask for.
+What changes is the REASON given for it, and one consequence:
+
+* the reason is not "nothing reads these names"; it is "the ENGINE reads them, from C++, and a mod
+  cannot make the engine ask for a new one";
+* **an existing anchor is editable, but only by replacing the whole `.gui` file.** There is no field
+  that points at a `positionType` - the corpus contains no `positionType = "name"` reference at all -
+  and two mods on the same relative path are a whole-file replacement where the loser is not parsed
+  (`host-gui-surface`). So "change one number in the engine's layout table" is not a small edit: it is
+  a fork of `main.gui` (1521 lines), `additional_content.gui` (1485) or `mapicons.gui` (1181),
+  whichever declares the anchor, with the anti-drift cost that comes with a fork. The probe did exactly
+  that - it re-pointed `pause_bg_animation_speed` from `{ x = 500 y = 2000 }` to `{ x = 15 y = 1234 }`
+  in its own copy of `main.gui` - and the engine read ITS copy, proven two ways: the engine printed
+  `interface/main.gui` on a `gridbox.cpp:51` bad-format line that vanilla's own file cannot produce,
+  and it printed the mod's own line numbers from `persistent.cpp:41`.
+* **and the engine USES the re-pointed number, not merely reads the file - closed by the user's eyes
+  on 2026-10-06.** The probe's copy set `pause_bg_animation_speed` to `{ x = 15 y = 1234 }` against
+  vanilla's `{ x = 500 y = 2000 }`. Under the speed reading the pair divided by 1000 goes from
+  **0.5...2.0** to **0.015...1.234**, i.e. every number gets smaller, so the pause indicator's rolling
+  glow should get SLOWER - and a human watched it get slower. The evidence is the **direction**, not
+  "something changed": a stray visual flicker, a reload or a frame-rate difference can fake a change,
+  but only "the engine really read the number" explains a change in the PREDICTED direction
+  (`DOORS-RESULTS.md` section 12.2). The same look retires a candidate explanation this project had
+  passed upward: if the two numbers were a PERIOD rather than a speed, `{15, 1234}` would be a shorter
+  period, hence FASTER - the opposite of what was seen - so the period speculation is retracted. The
+  user's other remark, "in-game time felt faster", is recorded in `DOORS-RESULTS.md` section 12.4 as an
+  **unexplained anomaly** and is deliberately NOT tied to this anchor.
+
+`positionType` blocks also carry more than `name` + `position`, contrary to the same retired claim:
+measured over the parse-based 233, `dynamic_extra_height` appears on **4** and `if_scaled_resolution`
+on **1** (`discoveries_view.gui:10`, `:15`, `ship_designer.gui:6`, `:13`, `frontend.gui:4`). The
+"exactly name + position" phrasing was a reading of one file's shape, not a measurement.
+
+## Syntax
+
+```
+# THE ANCHOR ITSELF - declared at the top of a .gui, inside guiTypes, before any element.
+# <Stellaris>/interface/additional_content/additional_content.gui:2
+positionType = {
+	name = "additional_content_grid_spacing"
+	position = { x = 4 y = 4 }
+}
+# and the engine-side consumer, in the SAME file - it names nothing, it just relies on the anchor:
+gridBoxType = {
+	name = "items_small"
+	size = { width = 100% height = 100%% }
+	slotSize = {}                       # Use the positionTypes at the top of the file ...
+	max_slots_horizontal = 0            # ... to change the slot size / the max slots
+	format = "UPPER_LEFT"
+}
+
+# ONE-LINE FORM (8 of the 224 line-rule blocks are written like this - topbar_traditions_view.gui:22):
+positionType = { name = "ap_0"	position = { x = 15 y = 50 } }
+# and the brace-on-the-next-line form (ship_designer.gui:43):
+positionType =
+{
+	name = first_stat_position
+	position = { x=-72 y=55 }
+}
+
+# HOW A MOD CAN CHANGE ONE - there is no partial edit:
+#   1. copy the WHOLE vanilla .gui that declares the anchor (its NAME is all the engine needs, so the
+#      declaring file is not derivable from it - grep interface/** for the name)
+#   2. change the position in your copy
+#   3. record the vanilla file's sha256 as the base and re-copy it on every game patch
+#      (gui_emit_override records it; gui_override_drift reports when it moved)
+# There is NO "positionType = { name = ... }" reference syntax to hook - 0 in the whole corpus.
+
+# WHAT THE ENGINE'S ERROR REPORTER SAYS ABOUT A BAD POSITION - nothing. Measured: 0 log lines
+# mention positionType or the name of the anchor the probe re-pointed, across four runs.
+# "The engine read my file" and "the engine used my number" look IDENTICAL in the log - which is
+# exactly why the USED half had to come from a human's eyes (2026-10-06): the pause indicator's
+# rolling glow got SLOWER, the direction the smaller numbers predict (DOORS-RESULTS.md 12.2).
+```
+
+## Evidence
+
+- `vanilla`, the re-measurement, reproducible: `<mods>/gui_probe_scratch/positiontype-census.mjs`
+  prints `files: 177  positionType blocks: 224` and lists every declaration with its file, line, name
+  and position; `positiontype-vs-exe.mjs` prints `positionType blocks: 224; names occurring as a
+  literal in stellaris.exe: 163`. Both were re-run for this topic against `<Stellaris>` and
+  produced those two lines verbatim.
+- `measured`, the parse-based count that differs, and why: this project's parser walks the block tree,
+  so `topbar_traditions_view.gui:22-29` (eight one-line declarations) and `ship_designer.gui:43`
+  (brace on the next line) are blocks like any other - **233** in all, 233 distinct names, **0**
+  same-named duplicates. The probe's line rule requires the declaration to open its own line and looks
+  for `name` within the next 8 lines (`positiontype-census.mjs:26-34`), which is why the same corpus
+  gives 224. Neither number is wrong; they measure different spellings, and whoever quotes one should
+  say which.
+- `vanilla`, **the retired claim falsified from the corpus, with the engine's own comment as the
+  clincher**: `interface/customize_species_shipsets.gui:21` says, verbatim,
+  `#Size is overriden by code with the value of the positionType "ship_browser_3d_view_size"` - the
+  install stating the name-lookup mechanism in a file that does not declare the anchor, which is
+  exactly the relationship the old claim said did not exist. The other exact-word occurrences:
+  `situation_log_size_default` (`situation_log.gui:96`) and `situation_log_size_focus` (`:108`) are
+  named in a comment at `databank_window.gui:8`;
+  `waroverview_side_participants_list_size_with_button` / `_without_button` (`waroverview.gui:1097`,
+  `:1101`) are named in comments at `war_goals_view.gui:117` / `:201`; and `ship_designer`
+  (`ship_designer.gui:74`) is a name 9 other files also use - there as a WINDOW name rather than an
+  anchor, which is the other half of the same story: element names and anchor names share one global
+  namespace. The exact-word pass run for this topic returns 6 names, 5 of them comments only.
+- `binary`, the anchor is an engine literal, with neighbours that say who asks for it:
+  `pause_bg_animation_speed` at exe offset **39417440**, in the run
+  `... pause_glow, pause_bg_stop, pause_bg, pause_bg_animation_speed, TOGGLE_NAVBAR_LOCK ...`;
+  `situation_log_size_default` and `_focus` adjacent at **39375056**; `event_option_offset` at
+  **39441904** next to `...\source\graphics\eventwindow.cpp`; and in the same family the two strings
+  vanilla's own comment refers to, `additional_content_grid_spacing` and
+  `additional_content_window_small_size`. `DOORS-RESULTS.md` section 3.1 records the offsets.
+- `log`, **the whole-file replacement, proven by whose bytes were read**: the probe shipped its own
+  `interface/main.gui` (1561 lines against vanilla's 1521) with two changes, one of them the
+  `pause_bg_animation_speed` anchor. The engine printed `interface/main.gui: Invalid format
+  "PROBEZZ_IFRES_BAD_FORMAT" in gridBoxType "probeZZifres_badformat_box".` from `gridbox.cpp:51` - a
+  line vanilla's file cannot produce - and printed the mod's own line numbers (41/46/53/57) from
+  `persistent.cpp:41`. Five lines named the file, all five from the mod's own tokens.
+- `log`, **and the reading of an anchor is silent**: across the four probe runs, **0** lines mention
+  `positionType` and **0** mention `pause_bg_animation_speed`. So the log measurement proves "the
+  engine read the file that holds the anchor", NOT "the engine used the new number" - and that second
+  half is no longer unverified: it was settled **by the user's eyes** on 2026-10-06, when the probe's
+  copy (`{ x = 15 y = 1234 }` against vanilla's `{ x = 500 y = 2000 }`) made the pause indicator's
+  rolling glow **slower**, the direction the speed reading predicts. `DOORS-RESULTS.md` section 3.5
+  (rewritten) and section 12.2 record it, and section 12.4 states the two lessons: the evidence is the
+  DIRECTION rather than the mere change, and the "in-game time felt faster" remark is kept as an
+  unexplained anomaly instead of being explained away.
+- `measured`/`eyes`, **the evidentiary split itself**: "the engine read my file" is a LOG fact (five
+  lines naming `interface/main.gui`, all five from the mod's own tokens, plus the mod's own line
+  numbers), while "the engine used the number" is an EYES fact (a human watched the animated glow).
+  They are two different rulers and this topic keeps them apart rather than blending them.
+- `vanilla`, **no reference syntax exists to hook**, which is what makes a partial edit impossible: a
+  search of the whole corpus finds no field whose value is a `positionType` name; the consumers are
+  the compiled call sites. The install's only textual evidence of the relationship is the vanilla
+  comment at `additional_content.gui:331-345` ("Use the positionTypes at the top of the file to change
+  the slot size" / "...the max slots") plus the fact that the names are exe literals - and, one panel
+  over, the comment quoted above.
+- `measured`, the plugin's model already had the right CONCLUSION: `src/lib/kinds.mjs` marks
+  `positionType` `emitter: false`, and `scripts/selftest.mjs` asserts both that the finding's message
+  names the keyword and that `gui_emit_files` never writes one. What this topic corrects is the help
+  text's reason, the "NOT ONE of the 233 names is referenced" clause and the "every one declares
+  exactly `name` + `position`" clause - all three now stated as the retired or corrected claims they
+  are.
+
+## Rules
+
+- A `positionType` name is a **global** anchor, not a file-local one, and the install says so in its
+  own comment: `customize_species_shipsets.gui:21` - "Size is overriden by code with the value of the
+  positionType \"ship_browser_3d_view_size\"" - written in a file that does not declare the anchor. A
+  name may also be shared with an ELEMENT name (`ship_designer` is both). Never assume the declaration
+  you are looking at is the only thing carrying that name.
+- A mod cannot invent an anchor: 163 of the 224 line-rule names are contiguous literals in
+  `stellaris.exe`, and the engine asks for a fixed set. `positionType` stays non-emittable
+  (`kind-not-emittable`).
+- A mod CAN re-point an existing anchor, but only by replacing the entire `.gui` that declares it -
+  there is no partial-edit syntax and no merge between two mods on the same path. Do it through
+  `gui_emit_override` so the vanilla base's sha256 is recorded, and expect `gui_override_drift` to
+  report the base moving under you.
+- Do not read silence as success. The engine logs nothing about a `positionType` read, so a re-pointed
+  anchor can only be confirmed by looking at what it controls (`pause_bg_animation_speed` drives the
+  pause-background animation speed - a visible quantity, and that look was taken on 2026-10-06: the
+  glow got **slower**, as the smaller numbers predict). **Prefer the direction**: "it changed" is weak
+  evidence and a side effect can fake it, so a claim that the engine used the number must state which
+  way the number predicts the visible quantity should move, and that it moved that way.
+- Keep the two rulers apart when reporting this: "the engine READ the file" is a log fact (five lines
+  naming `interface/main.gui`, the mod's own line numbers), "the engine USED the number" is a fact about
+  what a human saw. Do not write the second as if the log had said it.
+- Do not quote "233" and "0 references" together as a description of the engine's behaviour. 233 is
+  one parser's count, 224 is another rule's, 163 are exe literals, and the reference count is not zero.
+- When a rule's reason is a measurement, re-measure it before repeating it. This is the second
+  instance of the same failure in this project (`engine-capability-vs-usage` records the first four),
+  and it is why the reason for `kind-not-emittable` lives in the knowledge base now, not only in a help
+  string.
+
+## Breaks
+
+- "No other line references a `positionType` name, so nothing can break if I rename one." Renaming one
+  breaks whatever C++ call site asks for that name - and the corpus states the mechanism in a plain
+  comment (`customize_species_shipsets.gui:21`), so the relationship is not hypothetical. Names are
+  also shared with element names (`ship_designer`).
+- "I'll override just the one `positionType` block." Overriding is whole-file: you ship the entire
+  `.gui`, and the vanilla file at the same path is not parsed at all for that load.
+- Treating the absence of an error as proof the new coordinate took effect. Four probe runs produced
+  zero lines about the anchor, in a log noisy enough to show 169 `Unexpected token` lines and 259
+  missing-localisation lines in the same run.
+- Reading the 224/233 difference as one of the two numbers being wrong - and then quoting one of them
+  without the rule. Both are reproducible; only the stated rule distinguishes them.
+- Assuming "every `positionType` is `name` + `position`". Five of the parse-based 233 carry a third
+  field (`dynamic_extra_height` x4, `if_scaled_resolution` x1), so a checker that required exactly two
+  fields would report vanilla's own files.
+
+## 待确认
+
+- ~~**Whether a re-pointed anchor actually changes engine behaviour.**~~ **CLOSED 2026-10-06 by the
+  user's eyes.** The engine read the mod's copy of `main.gui` (two independent rulers, above) AND the
+  new numbers were used: `{ x = 15 y = 1234 }` against vanilla's `{ x = 500 y = 2000 }` made the pause
+  indicator's rolling glow **slower**, the direction the speed reading predicts. Two caveats stay on the
+  record: the confirming half is an **observation report**, not a screenshot or a log line, and the
+  user's separate "in-game time felt faster" remark is an **unexplained anomaly** that this topic does
+  not attach to the anchor (`DOORS-RESULTS.md` sections 12.2 and 12.4).
+- **What a duplicate global name does.** Two files declare `ship_browser_3d_view_size`. Whether the
+  engine takes the first, the last, or the one in the file it loaded for that view - and whether any
+  warning is written - is not established; the same question applies to the repeated `ap_N`-style
+  declarations the probe's own census flagged, and to the `positionType` names that collide with
+  element names.
+- **Whether the exe's 163 literals are all LOOKUPS.** A contiguous literal can also be an unrelated
+  string that coincides with a name (the parse-based pass finds `ap_0` and `first_stat_position`, two
+  names the line rule does not see, presumably for that reason). The precise set of names the engine
+  asks for is not extractable from strings alone.
+- **Which file declares each anchor, for the anchors a mod would want to move.** The name is all the
+  engine needs, not the file name, so finding the declaring `.gui` is a corpus grep; the plugin has no
+  index that answers "where is `pause_bg_animation_speed` declared" today.
+- **Whether the engine validates a `positionType` at all.** No message for a missing, duplicated or
+  malformed anchor was found in any log, and the exe's error strings were not searched for one - so
+  "an unknown anchor name is silently ignored" is a reading of absence, not a measurement.

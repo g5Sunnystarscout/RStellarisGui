@@ -1,0 +1,71 @@
+id = "override-maintenance-workflow"
+
+title = "The override anti-drift workflow - base hash, drift report, re-splice"
+
+category = "tooling"
+
+summary = "An override goes stale when the vanilla base moves, and the failure is silent (the file still parses, the game still loads, your edit is simply written over newer vanilla content). This topic is the three-step workflow that makes that mechanical instead of remembered - record the base as a sha256, ask gui_override_drift whether it moved and WHAT changed under you, then re-apply onto the new base with gui_emit_files apply_to so untouched lines stay byte-identical. Every step is a tool, every claim here is measured on the two shipped overrides on this machine and on a fixture whose base is deliberately moved."
+
+file_types = [
+    ".gui"
+]
+
+tags = [
+    "override",
+    "drift",
+    "sha256",
+    "apply_to",
+    "gui_emit_override",
+    "gui_override_drift",
+    "workflow",
+    "maintenance",
+    "container-path-override",
+    "container-name-collision",
+    "dlc_load"
+]
+
+body = """
+## What it is\n\nThe failure mode of a vanilla override is not that it is fragile. It is that **the base moves and\nnothing says so.** A patch changes a container's name, a size, or adds an element; the mod's copy is\nnow the OLD file; the game loads it happily, and the mod is silently shipping stale vanilla content\nover the new version. Every geometric check passes, because the file is still a legal `.gui`.\n\nSo the workflow is three steps, and each one exists because the previous one can only be trusted if\nthe next one is mechanical:\n\n1. **RECORD THE BASE** — the vanilla file's `sha256`, in the override's own header. Prose (\"4.4.6\")\n   tells a human; a hash tells the machine. `gui_emit_override` writes\n   `# vanilla source sha256: <64 hex>` and refuses a later run whose `expected_source_hash` no longer\n   matches — a refusal with a name instead of a silent regression.\n2. **ASK WHAT MOVED** — `gui_override_drift` compares the mod's copy against the vanilla file on disk\n   NOW and answers four questions: did the recorded hash change; which elements does the current\n   vanilla file declare that your copy does NOT (vanilla content you are dropping); which elements\n   does your copy declare that vanilla never did (your additions, and the container each hangs off);\n   and which elements do you CHANGE, with the direction spelled out. The last one is the one that\n   matters for a slot-expanding mod, because its whole edit is four numbers.\n3. **RE-APPLY ONTO THE NEW BASE** — re-copy the current vanilla file and re-apply your edit. Use\n   `gui_emit_files { apply_to }`, which diffs your edited tree against the imported baseline and\n   performs targeted textual insertions into the ORIGINAL bytes, so every line you did not touch stays\n   identical — the file's comments included, which in this project's case are the engine-contract\n   notes.\n\n**Neither shipped override on this machine has step 1.** Both say \"re-copy when the version changes\"\nin prose and neither records a hash, so `gui_override_drift` reports\n`override-base-unrecorded` about both and CANNOT tell whether they are stale. That is not a criticism\nof those mods — it is the reason the step is worth a tool. Both were also confirmed a strict SUPERSET\nof their base (`missing` = 0), which is what a good override looks like.\n\n## 待确认\n\n- Whether a `sha256` recorded against one game version stays meaningful across a DLC-only update that\n  does not touch the file. The hash answers \"did THIS file change\", which is the right question, but\n  whether a Paradox patch rewrites untouched files wholesale was not measured.\n- Whether the engine reports anything at all about a stale override. No log line was observed for\n  either shipped override, and the mods' own headers are prose rather than a check, so the failure is\n  believed to be entirely silent — believed, not proven.\n- Whether `descriptor.mod`'s `supported_version` is enforced by the launcher as anything more than a\n  warning. This project only compares the strings; nothing observed the launcher's behaviour.
+"""
+
+syntax_blocks = [
+    "# 1. RECORD. The header gui_emit_override writes, and the refusal it enables.\n# vanilla source sha256: 7c9b911a34b48d0338823be2798c7a432edaeefc52692714e0ad3d6dc97a44d7\n#   gui_emit_override { vanilla_path, additions: [...],\n#                       expected_source_hash: \"<the hash from last time>\",\n#                       i_understand_this_overrides_vanilla_file: true, output_root }\n#   -> refuses: \"the vanilla file has changed since this override was built\"\n\n# 2. ASK. Read-only on both files.\n#   gui_override_drift { overridden_path: \"<mod>/interface/fleet_view.gui\",\n#                        vanilla_path:    \"<install>/interface/fleet_view.gui\" }\n#   {\n#     baseHash:  { recorded, current, moved: true|false|null },   // null = nothing was recorded\n#     elements:  { added: [...], missing: [...], changed: [...], unchangedCount },\n#     splicePoints: [ { element, container, containerExists, containerIsOwnAddition } ],\n#     version:   { install: \"v4.4.6\", modSupported: \"v4.4.*\", covered: true },\n#     verdict:   \"current\" | \"base moved, nothing lost\" |\n#                \"stale: re-copy the vanilla base and re-apply the edits\" |\n#                \"undetectable: the override records no base hash\",\n#     findings:  [ ...one per rule below, with the numbers in the message... ]\n#   }\n\n# 3. RE-APPLY. The add path, which keeps untouched lines byte-identical by construction.\n#   gui_layout_import { path: \"<mod>/interface/fleet_view.gui\", layout_id: \"lv\" }\n#   gui_layout_edit   { layout_id: \"lv\", edits: [ ... ] }\n#   gui_emit_files    { layout_id: \"lv\", apply_to: \"<mod>/interface/fleet_view.gui\",\n#                       output_root, dry_run: false }"
+]
+
+evidence = [
+    "measured: gui_override_drift on aerospace_carrier/interface/fleet_view.gui against <Stellaris>\\interface\\fleet_view.gui reports added = 3 (aerospace_carrier_bridge_bar -> bottom, aerospace_carrier_muster_button and aerospace_carrier_bombard_button -> aerospace_carrier_bridge_bar), missing = 0, changed = 0, unchangedCount = 132, baseHash.moved = null, and override-base-unrecorded. Verdict: undetectable.",
+    "measured: the same call on geocentric_origin/interface/planet_view.gui reports added = 1 (unga_open_button -> header_actions), missing = 0, changed = 0, unchangedCount = 627, and the same override-base-unrecorded.",
+    "measured: a line-level comparison of the Aerospace Carrier file against vanilla finds 43 lines present only in the mod file and 0 present only in vanilla — a strict superset, which is why missing is 0 and why an override that follows the pattern goes stale only when vanilla ADDS.",
+    "measured, on a fixture whose base is deliberately moved (scripts/fixtures/host_override/vanilla_host_v2.gui changes the container's size and adds an element): baseHash.moved = true, override-vanilla-content-missing (error) names zz_surface_host_patch_badge, override-modifies-vanilla-element reports zz_surface_host (size vanilla 560x320 -> your copy 520x300), and the verdict is stale: re-copy the vanilla base and re-apply the edits. scripts/selftest.mjs asserts each of those, so the drift report is never shipped unexercised.",
+    "measured: an override whose ONLY edit is a number (scripts/fixtures/host_override/number_change_only.gui, the ascension-slot shape) reports added = 0 and changed = 1. Without the changed half of the report this file would read as \"no changes\" — which is exactly the case the ascension-perk mods live in.",
+    "measured: the install version and the mod's declared support agree — launcher-settings.json rawVersion = v4.4.6, aerospace_carrier/descriptor.mod supported_version=\"v4.4.*\", and versionCovers returns true.",
+    "measured: the compile-time door is the same hash. gui_emit_override writes the base's sha256 in the output header, and its own expected_source_hash refuses a moved base; the fixture planet_view_mini.gui therefore reports baseHash.moved = false and verdict current.",
+    "measured: the apply path (gui_emit_files { apply_to }) is the re-apply step and is asserted separately - a round trip with no edit reproduces the file byte for byte, and an edit that ADDS a top-level window keeps every untouched line identical (gui-pitfalls.md §15, GAP-4).",
+    "log, 2026-10-06 - one file per relative path, and the LAST mount wins (probed in a loaded game; PROBE-RESULTS.md section 3). Two mods each shipped interface/input_blocker.gui; with … ovr_alpha -> ovr_beta in dlc_load.json only beta's markers appear in error.log, and with the entries swapped only alpha's do - a log that reports both kinds of marker the probe planted (Unexpected token: <its own token> and gridbox.cpp:51 Invalid format \"<its own format>\"). The losing file is not merged and not shadowed at lookup: it is never parsed. The engine's own Found duplicate containerWindowType reporter never fires, because the loser's container never reaches the loaded set. Nothing about a mod's own UNIQUELY named files is affected."
+]
+
+rules = [
+    "Always record the base. If a .gui override in your mod has no # vanilla source sha256: line, the first thing to do is re-emit it through gui_emit_override (or add the line), because until then nobody — human or tool — can tell whether it is stale.",
+    "Ask gui_override_drift after every game update, and read missing first: a non-empty missing is vanilla content you are dropping right now.",
+    "Re-apply, do not re-copy your old numbers. On a base move, the current vanilla file is the truth and your edit is the delta.",
+    "Use apply_to for the re-apply, not a regenerate: a regenerate reflows the file and loses the comments, and the comments are the engine-contract record (gui-pitfalls.md §15).",
+    "Read changed even when you added nothing. A slot-expansion mod's entire edit is numbers, and a report that only counted additions would call its file current.",
+    "Treat override-vanilla-content-missing as blocking. It is the one finding whose consequence the player sees and no other check catches.",
+    "An override is the ONLY copy of that relative path the engine parses. Measured in a loaded game on 2026-10-06 by shipping interface/input_blocker.gui from two mods and flipping their order in dlc_load.json: the winner is the LAST entry and the loser's file is never read at all (its unique markers are absent from a log that reports the winner's). So two providers of one relative path are container-path-override (info, reported with the load-order fact), and only two providers at DIFFERENT relative paths are container-name-collision (error) — then both files load and both declare the name. PROBE-RESULTS.md section 3; GAP-14.",
+    "To find out WHICH copy the engine actually read, plant a deliberately invalid format in a gridBoxType of your file: gridbox.cpp:51 prints the file name (interface/input_blocker.gui: Invalid format \"...\" in gridBoxType \"...\"), where persistent.cpp:41 (\"Unexpected token\") prints a line number and no file."
+]
+
+breaks = []
+
+relationships = [
+    "host-gui-surface",
+    "script-routes-to-a-window",
+    "apply-preserves-transparency-and-comments",
+    "engine-populated-containers"
+]
+
+source_refs = []
+
+title_zh = "覆写的防漂移流程——基线哈希、漂移报告、重新拼接"
+
+verified_version = "Stellaris 4.4.6 \"Pegasus\""

@@ -1,0 +1,28 @@
+#------------------------------------------------------------------------------------
+# OVERRIDE of vanilla_host.gui (337 bytes, 18 lines)
+# vanilla source sha256: 29713e3c4f4025da67e66dc6d41deebb1fec95cdb469688d89d19e3256e38524
+#
+# This file was produced to exercise the ASCENSION-SLOT shape: an override whose only edit is a
+# NUMBER in an engine-populated container. The screen's capacity is those numbers and nowhere
+# else, and the items come from common/ascension_perks/ - so a drift report that only counted
+# ADDED elements would say "no changes" about this file.
+#
+# Changed: zz_surface_host size 520x300 -> 700x520 (one number, no additions)
+#------------------------------------------------------------------------------------
+guiTypes = {
+	containerWindowType = {
+		name = "zz_surface_host"
+		size = { width = 700 height = 520 }
+
+		background = {
+			name = "zz_surface_host_bg"
+			quadTextureSprite = "GFX_tiles_dark_area_cut_8"
+		}
+
+		iconType = {
+			name = "zz_surface_host_icon"
+			quadTextureSprite = "GFX_arrow_left"
+			position = { x = 12 y = 10 }
+		}
+	}
+}

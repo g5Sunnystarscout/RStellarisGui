@@ -1,0 +1,51 @@
+########################################################################
+# Geocentrism - UN General Assembly helper effects
+#
+# ONE job: stop the window's close button X from re-opening the window it just closed.
+#
+# THE BUG (proven from logs/game.log, 2026-10-05)
+# The engine resolves the event window's X button by selecting OPTION 0 of the event
+# (`selectedOption 0`). Option 0 of all six windows is `unga_sidebar_main`, whose
+# `hidden_effect` fired `geocentric_unga.1` -- the very event whose window had just been
+# closed. So the event was consumed and immediately re-created, and the window was drawn
+# again in the next frame: "关掉一帧，然后立马重新打开" (closed for one frame, then straight back).
+#
+# WHY NOT `has_active_event` (first attempt, rejected by measurement)
+# The obvious guard is `if = { limit = { NOT = { has_active_event = { geocentric_unga.1 } } } ... }`.
+# It does not work, and the log shows exactly why -- the engine consumes the event BEFORE the
+# option's effects run, so by then the event is already gone:
+#     06:52:09  effectbuttonType effect -> "UNGA diag: CLOSE button pressed"
+#     06:52:09  Event geocentric_unga.1 ... selectedOption 0, playerEventId 9   <-- consumed here
+#     06:52:09  scripted effect ENTERED
+#     06:52:09  "... geocentric_unga.1 NOT active, firing it"                   <-- guard measured the wrong moment
+#     06:52:10  Event geocentric_unga.1 ... selectedOption 0, playerEventId 10  <-- the window comes back
+# A trigger that has to be read at option-execution time cannot answer "was this window open a
+# moment ago". The one thing that runs EARLIER is the close button's own button effect -- it is
+# logged one step before the selection -- so it is what sets the flag below.
+#
+# THE DISCRIMINATOR
+# `geocentric_unga_close_pressed` is set by the close button's button effect
+# (zz_geocentric_unga_button_effects.txt -> geocentric_unga_diag_close) and read here.
+#   * X pressed  -> flag set -> option 0 consumes it and does NOT re-fire -> the window stays closed.
+#   * sidebar row -> flag not set -> fires unga.1 -> navigating back to the main panel still works.
+# The flag is cleared whenever it is consumed, so it can never stick and disable navigation; if a
+# press is ever lost the flag simply persists until the next close, which clears it again.
+#
+# Vanilla uses `has_active_event` for the neighbouring job of not opening a second window from a
+# button (common/scripted_triggers/02_scripted_triggers_caravaneers.txt:9-19, "# prevents diplo
+# duplication"). That guard is still in place on the planet-panel entry button, where it works
+# because it is evaluated while the window is genuinely still on screen.
+########################################################################
+
+# Called from the main-nav option (option 0) of all six windows.
+# true  = the close button caused this selection -> do not re-open anything.
+# false = the player chose "UN General Assembly" from another panel -> switch back to the main panel.
+geocentric_unga_main_option_effect = {
+	if = {
+		limit = { has_country_flag = geocentric_unga_close_pressed }
+		remove_country_flag = geocentric_unga_close_pressed
+	}
+	else = {
+		country_event = { id = geocentric_unga.1 }
+	}
+}

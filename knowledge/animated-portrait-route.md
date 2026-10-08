@@ -1,0 +1,446 @@
+---
+id: animated-portrait-route
+category: drawing
+title: An animated portrait is a re-skinned mesh, and a mod can re-skin one with TEXT alone - two routes that need no Maya, plus the two tools that can author a new mesh
+title_zh: 动态立绘就是换皮的网格——MOD 只用文本就能换皮，两条不需要 Maya 的路线，以及两个能制作新网格的工具
+summary: `portrait-formats-and-recipe` proved a 2D portrait cannot be animated, so motion means the `.mesh` pipeline. This topic settles HOW a mod ships one, and the load-bearing finding is that **no 3D tool is needed for the re-skin route**: `pdxmesh = { file = "<a .mesh>" meshsettings = { name = "<object>Shape" texture_diffuse = "<dds>" texture_normal = ... texture_specular = ... shader = "<effect>" } }` in a mod's own `.gfx` re-textures ANY mesh by OBJECT NAME, and vanilla does exactly that itself - `_extradimensional_portrait_meshes.gfx` points four vanilla portraits (`exd1`..`exd4`) at ONE `.mesh` file with different `texture_diffuse` per object, and `exd1`'s portrait definition declares no `character_textures` at all. A portrait consumes texture through five named shader slots: `character_textures` (a POOL of whole-body alternatives, index-selected) -> `PortraitCharacter` (12), `clothes_selector` -> `PortraitClothes` (13), `attachment_selector` -> `PortraitHair` (14), the mesh material's own `diff` -> `DiffuseMap` (0), and `portrait_evolution` mask/decal -> `CustomTexture2` (11) / `PortraitEvolutionDecal` (15); `human_female_01` reaches 38 distinct `.dds`. The `.mesh` and `.anim` `pdxasset` containers are now READ (grammar in Syntax; 406/406 mesh files and the `.anim` clips parse exactly), so the animation is measurably pure bone transforms (`info { fps sa j }` + per-joint `t`/`q`/`s`) and cannot change the art. Authoring a NEW mesh needs either Paradox's account-gated **Clausewitz Maya Exporter** (Maya 2015/2016, not installed here) or the community **ross-g/io_pdx_mesh** (Blender 3.64+ / Maya 2018+, GPL, `clausewitz.json` carries a `stellaris` preset naming PdxMeshPortrait/Clothes/Hair); nothing else in the install or on the web produces a `.mesh`, and no Blender/Noesis/assimp tool other than io_pdx_mesh was found. The shipped "Animated ... Portraits" family (silfae: Astroraptor 48.24 MB, Serpentoid 35.88 MB, Xu'vua 53.63 MB, Kosmian 139.89 MB) is additive and alters no vanilla file - i.e. its own mesh/anim/texture set on the vanilla entity pipeline, which is what a real rig costs.
+verified_version: Stellaris 4.4.6 "Pegasus"
+file_types: [.txt, .asset, .gfx, .mesh, .anim, .dds, .shader]
+tags: [portrait, animated, dongtai, mesh, anim, pdxmesh, objectTypes, meshsettings, texture_diffuse, texture_normal, texture_specular, asset_selectors, character_textures, clothes_selector, attachment_selector, portrait_evolution, pdxasset, uv-atlas, reskin, maya, clausewitz-maya-exporter, blender, io_pdx_mesh, silfae, animated-portraits, 动立绘]
+related: [portrait-formats-and-recipe, texture-registration, override-maintenance-workflow]
+sources: [<Stellaris>/gfx/models/portraits, <Stellaris>/gfx/portraits/portraits, <Stellaris>/gfx/portraits/asset_selectors, <Stellaris>/gfx/FX/pdxmesh.shader, <Stellaris>/gfx/FX/pdxmesh_samplers.fxh, <Stellaris>/interface/customize_species_editors.gui, https://github.com/ross-g/io_pdx_mesh, https://stellaris.paradoxwikis.com/Maya_exporter, https://stellaris.paradoxwikis.com/Portrait_modding, https://stellaris.smods.ru/archives/49171]
+---
+
+## The answer in one line
+
+**To make a portrait move you need a `.mesh`, and to give a `.mesh` your own art you need no 3D tool at
+all** - the mesh's own material block is overridable from plain text, by object name, in a `.gfx` the
+mod ships. Vanilla proves it on four of its own portraits.
+
+Read `portrait-formats-and-recipe` first: it establishes the negative (a 2D `texturefile`/`spriteType`
+portrait renders and does **not** animate; a portrait cannot name a `frameAnimatedSpriteType`). This
+topic is the positive half - the two sub-routes that a mod can actually ship, and what each one costs.
+**This topic is canonical for the ANIMATED route**; that one is canonical for the format negative, the
+2D routes and `portraitType`, and it now points here for everything that moves.
+
+| sub-route | what the mod writes | what it reuses | tools needed |
+| --- | --- | --- | --- |
+| **(A1) re-skin through the portrait definition** | one `gfx/portraits/portraits/*.txt` naming a vanilla `entity`, plus own `.dds` at root-relative paths, plus `gfx/portraits/asset_selectors/*.txt` for clothes/hair | vanilla `.mesh` + vanilla `.anim` + vanilla entity | a paint program |
+| **(A2) re-skin through a mod-owned `pdxmesh`** | one `gfx/models/portraits/<dir>/*_meshes.gfx` with `file = "<a vanilla .mesh>"` + `meshsettings` per object, own `.asset` entity, own portrait definition | vanilla `.mesh` + vanilla `.anim` (by animation NAME) | a paint program |
+| **(B) author the mesh** | `.mesh` + `.anim` + the same five files as vanilla | nothing | **Clausewitz Maya Exporter** (Maya 2015/2016) or **io_pdx_mesh** (Blender/Maya) |
+
+**(A2) is the one to reach for**, and it is the one the rest of this topic is organised around: it
+needs no Maya, no binary editing, no override of any vanilla file, and it gives per-object control of
+the diffuse **and** the shader.
+
+## The recipe (route A2), start to finish, with no 3D tool
+
+Four files, all text, plus your own `.dds`. Nothing here edits or replaces a vanilla file.
+
+**Step 0 - pick the mesh you are going to wear.** Open
+`gfx/models/portraits/<culture>/_<culture>_portrait_meshes.gfx` and read the `pdxmesh` block you
+want; `file = ` is the mesh. For a humanoid face, `portrait_human_female_mesh` ->
+`gfx/models/portraits/human/new_human/human_01_female_portrait.mesh` (8 objects, listed in the next
+section). The mesh you pick decides your UV layout and your bone names, so pick first.
+
+**Step 1 - paint your atlas.** Decode the vanilla `.dds` that mesh bakes (the `diff` in its
+`material` blocks - for the human female it is `human_female_body_african_hazel_eyes.dds`,
+`gfx/models/portraits/human/new_human/`), keep every UV island where it is, and paint over it. The
+generated UV map for that mesh is
+[`docs/portrait-atlas-human-female-uv.png`](../docs/portrait-atlas-human-female-uv.png) - each
+object's UV box drawn on the real atlas. **Do not flip vertically when you convert PNG to DDS: `V = 0`
+is the DDS's first row.** Save as `.dds` (420x512 RGBA32 is what vanilla does for this set; DXT5/BC3
+is fine for opaque art).
+
+**Step 2 - write the mesh declaration**, `gfx/models/portraits/<yourdir>/_my_portrait_meshes.gfx`,
+using Syntax-1: one `pdxmesh` naming a VANILLA `.mesh`, and one `meshsettings` block per object. For
+the human female mesh the eight blocks are `headShape`, `bodyShape`, `eye_globeShape`,
+`eye_pupilShape`, `eye_specShape` (shader `PdxMeshPortrait`), `clothesShape` (shader
+`PdxMeshPortraitClothes`) and `hairShape` + `hair_02Shape` (shader `PdxMeshPortraitHair`). Borrow the
+animations in the same block - **use a vanilla animation name, e.g.
+`human_01_female_portrait_idle1_animation` and `human_01_female_portrait_idle2_animation`** for that
+mesh, or any name from any `*_animations.asset` (a name from another directory is normal: 32 vanilla
+blocks do it). You ship no `.anim`.
+
+**Step 3 - write the entity**, `gfx/models/portraits/<yourdir>/_my_portrait_entities.asset`, using
+Syntax-2: `pdxmesh` = your mesh name, `default_state = "idle"`, and one `state` line per animation id
+you declared. The `chance` value is a WEIGHT for which clip plays, not a probability.
+
+**Step 4 - write the portrait definition**, `gfx/portraits/portraits/zz_my_portraits.txt`, using
+Syntax-3: `entity` = your entity, **omit `character_textures`** so the shader draws your
+`meshsettings` textures, and either write `clothes_selector = "no_texture"` /
+`attachment_selector = "no_texture"` or ship your own selectors (Syntax-4).
+
+**Step 5 - make it appear in the empire designer.** Copy vanilla's four-line pattern: a
+`portrait_groups` block in the same file, a group name in `common/portrait_sets/zz_my_sets.txt`, and
+that set in `common/portrait_categories/zz_my_categories.txt`. **Do not** add a `portraits` key to
+`common/species_classes/` - the 4.4.6 parser refuses it.
+
+**Where it goes wrong, in one line each.** A `pdxmesh` name declared twice; a `meshsettings` `name`
+that is not an object name in the mesh (97 of 191 vanilla blocks do not match, and they are silently
+ignored); a bare `texture_diffuse` filename that is not unique; a portrait with no `character_textures`
+AND no `meshsettings` texture (the mesh's own baked `diff` is then drawn, i.e. vanilla's art); and a
+`.dds` converted with a vertical flip (the face lands upside down).
+
+## Syntax
+
+```paradox
+# ---------------------------------------------------------------------------------------------
+# 1. (A2) A MOD-OWNED pdxmesh OVER A VANILLA .mesh - the whole re-skin lives here.
+#    `gfx/models/portraits/<yourdir>/_my_meshes.gfx`. The shape is vanilla's own; the example below
+#    is `_extradimensional_portrait_meshes.gfx` with the paths kept, because that file is the
+#    PROOF that this works: four portraits (`exd1`..`exd4`) share ONE .mesh file.
+# ---------------------------------------------------------------------------------------------
+objectTypes = {
+	pdxmesh = {
+		name = "my_portrait_mesh"                            # your name; must be unique
+		file = "gfx/models/portraits/human/new_human/human_01_female_portrait.mesh"
+		                                                     # <- a VANILLA .mesh. Root-relative,
+		                                                     #    and 182 vanilla pdxmesh blocks
+		                                                     #    already point outside their own
+		                                                     #    .gfx's directory.
+		animation = { id = "idle"  type = "human_01_female_portrait_idle1_animation" }
+		animation = { id = "idle2" type = "human_01_female_portrait_idle2_animation" }
+		                                                     # `type` is an animation NAME from any
+		                                                     # *_animations.asset; 32 vanilla blocks
+		                                                     # reference one from another directory.
+		                                                     # YOUR .anim files are NOT needed.
+		scale = 1.0
+
+		# ONE BLOCK PER OBJECT IN THE .mesh. `name` is the object name INSIDE the mesh
+		# ("bodyShape", "headShape", "eye_globeShape", ...), and the four texture_* /
+		# shader fields are the override.
+		meshsettings = {
+			name = "headShape"
+			index = 0                                        # vanilla only ever writes 0
+			shader = "PdxMeshPortrait"                       # may CHANGE the effect, not just the texture
+			texture_diffuse  = "my_face.dds"
+			texture_normal   = "nonormal.dds"                # gfx/models/nonormal.dds ships with the game
+			texture_specular = "nospec.dds"                  # gfx/models/nospec.dds
+		}
+		meshsettings = { name = "bodyShape"      shader = "PdxMeshPortrait"       texture_diffuse = "my_body.dds" }
+		meshsettings = { name = "eye_globeShape" shader = "PdxMeshPortrait"       texture_diffuse = "my_body.dds" }
+		meshsettings = { name = "eye_pupilShape" shader = "PdxMeshPortrait"       texture_diffuse = "my_body.dds" }
+		meshsettings = { name = "eye_specShape"  shader = "PdxMeshPortrait"       texture_diffuse = "my_body.dds" }
+		meshsettings = { name = "clothesShape"   shader = "PdxMeshPortraitClothes" texture_diffuse = "my_clothes.dds" }
+		meshsettings = { name = "hairShape"      shader = "PdxMeshPortraitHair"   texture_diffuse = "my_hair.dds" }
+		meshsettings = { name = "hair_02Shape"   shader = "PdxMeshPortraitHair"   texture_diffuse = "my_hair.dds" }
+	}
+}
+
+# ---------------------------------------------------------------------------------------------
+# 2. (A2) THE ENTITY, in the mod's own .asset. Same shape as vanilla's `_*_portrait_entities.asset`.
+#    If the portrait declares NO `character_textures`, the shader's `CustomDiffuseTexture` is 0 and
+#    the meshsettings `texture_diffuse` is what is drawn (this is exactly what `exd1` does).
+# ---------------------------------------------------------------------------------------------
+entity = {
+	name = "my_portrait_entity"
+	pdxmesh = "my_portrait_mesh"
+	default_state = "idle"
+	state = { name = "idle" animation = "idle"  animation_blend_time = 0.0 chance = 8.0 looping = no next_state = idle }
+	state = { name = "idle" animation = "idle2" animation_blend_time = 0.0 chance = 1.0 looping = no next_state = idle }
+	scale = 0.81
+}
+
+# ---------------------------------------------------------------------------------------------
+# 3. THE PORTRAIT DEFINITION. `gfx/portraits/portraits/zz_my_portraits.txt`. The five texture
+#    fields a portrait can carry, in the order the engine resolves them.
+# ---------------------------------------------------------------------------------------------
+portraits = {
+	my_portrait = {
+		entity = "my_portrait_entity"          # -> pdxmesh -> .mesh + animation state machine
+
+		# (i) THE BODY/HEAD/EYE ATLAS - a POOL of WHOLE-BODY alternatives, not a slot list.
+		#     The engine binds ONE of them to the shader's `PortraitCharacter` slot (index 12),
+		#     for EVERY material whose effect is PdxMeshPortrait*. WHICH one is an INDEX: the
+		#     species editor's "Phenotype" spinner (`interface/customize_species_editors.gui`:
+		#     container `sub_portrait`, label LEADER_SUB_PORTRAIT = "Phenotype", :1766-1828).
+		#     Repeats are legal - `mam3` lists `mammalian_slender_03_orange.dds` three times.
+		character_textures = {
+			"gfx/models/portraits/mine/body_01.dds"
+			"gfx/models/portraits/mine/body_02.dds"
+		}
+
+		# (ii) CLOTHES -> shader slot `PortraitClothes` (13). The value is a SELECTOR NAME, not a
+		#      texture; it resolves through `gfx/portraits/asset_selectors/<anyfile>.txt`, whose
+		#      top-level key is the name. The selector picks by SCOPE and TRIGGER.
+		clothes_selector = "my_clothes_01"
+
+		# (iii) HAIR / ATTACHMENT -> shader slot `PortraitHair` (14). SAME mechanism.
+		#       `attachment_selector`, NEVER the wiki's `hair_selector` - that field is rejected.
+		attachment_selector = "my_hair_01"
+
+		# (iv) `texturefile` is the STATIC 2D route and is mutually exclusive with the two above;
+		#      never write it on an entity portrait.
+
+		greeting_sound = "human_female_greetings_03"
+		custom_attachment_label = "HAIR_STYLE"       # the label the attachment spinner shows
+		custom_close_up_scale   = 2.0
+		custom_close_up_position_offset = { x = 0 y = 0 }
+	}
+
+	# (v) THE EVOLUTION DECAL/MASK, per portrait or globally. `01_portraits_main.txt:332-338`
+	#     declares the global block; a portrait may declare its own `variants`.
+	#       decal = "....dds"  -> shader sampler `PortraitEvolutionDecal` (index 15)
+	#       mask  = "....dds"  -> shader sampler `CustomTexture2`         (index 11)
+	#       mask_color = { 0 255 255 255 }   <- the sentinel the pixel shader compares against
+}
+
+# ---------------------------------------------------------------------------------------------
+# 4. THE SELECTOR a `clothes_selector` / `attachment_selector` names. The NAME and the FILE name
+#    are INDEPENDENT (`new_human_female_hair_01` lives in `new_human_female_01_hair.txt`), so a
+#    reader must search every file in `gfx/portraits/asset_selectors/` for the block.
+# ---------------------------------------------------------------------------------------------
+my_clothes_01 = {
+	default = "gfx/models/portraits/mine/clothes_ruler.dds"          # required: the engine logs
+	                                                                 # "Missing default texture in
+	                                                                 #  texture selector" without it
+	game_setup = { default = "gfx/models/portraits/mine/clothes_admiral.dds" }
+	species    = { default = "gfx/models/portraits/mine/clothes_ruler.dds" }
+	pop = {
+		default = "gfx/models/portraits/mine/clothes_governor.dds"
+		"gfx/models/portraits/mine/clothes_admiral.dds"   = { OR = { is_pop_category = worker is_enslaved = yes } }
+		"gfx/models/portraits/mine/clothes_scientist.dds" = { is_pop_category = specialist }
+	}
+	leader = {
+		"gfx/models/portraits/mine/clothes_scientist.dds" = { leader_class = scientist }
+		"gfx/models/portraits/mine/clothes_admiral.dds"   = { leader_class = commander }
+	}
+	ruler = { default = "gfx/models/portraits/mine/clothes_ruler.dds" }
+}
+
+# ---------------------------------------------------------------------------------------------
+# 5. (A1) THE DEFINITION-ONLY RE-SKIN. No .gfx, no .asset, no mesh of your own: name a VANILLA
+#    entity and hand it your own textures at the paths the vanilla definition uses. This is what
+#    `human_female_01` itself does (it shares `portrait_human_female_entity` with four others).
+#    A PARTIAL re-skin is a FILE OVERRIDE: ship your .dds at a vanilla path and every portrait
+#    that references it changes - no definition edit at all.
+# ---------------------------------------------------------------------------------------------
+portraits = {
+	my_human = {
+		entity = "portrait_human_female_entity"        # vanilla - shared by human_female_01..05
+		clothes_selector = "new_human_female_clothes_01"
+		attachment_selector = "new_human_female_hair_01"
+		character_textures = { "gfx/models/portraits/mine/body.dds" }
+	}
+}
+
+# ---------------------------------------------------------------------------------------------
+# 6. (B) AUTHORING A NEW MESH. Four files, in this order, exactly as vanilla lays them out; the
+#    wiki's order is wrong (`gfx/portraits/portraits/00_portraits.txt` does not exist) and the
+#    wiki's species_classes step is dead in 4.4.6.
+#    a. gfx/models/portraits/<dir>/_my_portrait_animations.asset
+#         animation = { name = "my_idle_animation"  file = "my_idle.anim" }
+#    b. gfx/models/portraits/<dir>/_my_portrait_meshes.gfx
+#         objectTypes = { pdxmesh = { name = "my_mesh"  file = "<my>.mesh"
+#                                     animation = { id = "idle" type = "my_idle_animation" }
+#                                     scale = 1.0 } }
+#    c. gfx/models/portraits/<dir>/_my_portrait_entities.asset
+#         entity = { name = "my_entity" pdxmesh = "my_mesh" default_state = "idle"
+#                    state = { name = "idle" animation = "idle" chance = 2.0 looping = no next_state = idle }
+#                    scale = 1.0 }
+#    d. gfx/portraits/portraits/zz_my_portraits.txt  -> the block in (3) above
+#    ...then list the group so the empire editor can see it:
+#       common/portrait_sets/zz_my_sets.txt      my_set   = { species_class = HUM  portraits = { "my_group" } }
+#       common/portrait_categories/...txt        humanoids = { name = HUM  sets = { my_set } }
+#       gfx/portraits/portraits/zz_my.txt        portrait_groups = { my_group = { default = my_portrait ... } }
+# ---------------------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------------------
+# 7. THE CONTAINER GRAMMAR of .mesh AND .anim (both are the same `pdxasset` container).
+#    Header:  "@@b@!"  u8 <len>  ASCII "pdxasset"  'i'  u32 u32 u32   (the three u32s are 2,1,0 in
+#    every portrait .mesh and .anim read). Then, to EOF:
+#      NODE      '[' * depth   <name> \0
+#      PROPERTY  0x21  u8 <nameLen>  <name>  <typeChar>  <payload>
+#      type 'i'  u32 count, count * i32        type 'f'  u32 count, count * f32
+#      type 'd'  u32 count, count * f64        type 's'  u32 count, count * (u32 len, len bytes
+#                                                          INCLUDING the trailing NUL)
+#    A node's bracket count is its DEPTH, so a lower count pops back to an ancestor.
+#    .mesh  node/property vocabulary (the engine's own token table, stellaris.exe @40840300 pp.):
+#      object, mesh, skin, aabb, material, skeleton, samples, locator, info,
+#      p n ta u0 u1 u2 u3 tri t ix pa q s sa j w fps spec shader tx diff lod loddist min max
+#      -> a material is { shader = "<effect>", diff = "<basename>.dds" [, n = ..., spec = ...] }
+#    .anim  = info { fps f, sa i (sample count), j i (joint count) } then one node PER JOINT with
+#      t (3 floats) / q (4, a quaternion) / s (1) - i.e. BONE TRANSFORMS ONLY, no art at all.
+# ---------------------------------------------------------------------------------------------
+```
+
+## What a portrait actually consumes - `human_female_01`, every texture slot
+
+`human_female_01` (`gfx/portraits/portraits/07_portraits_human.txt:16`) is the worked example. Its
+`entity = "portrait_human_female_entity"` (`_new_human_portrait_entities.asset:8-14`) resolves to
+`pdxmesh = "portrait_human_female_mesh"` (`_new_human_portrait_meshes.gfx:5-11`, file
+`human_01_female_portrait.mesh`, 72,448 bytes), whose 8 objects split by **shader**:
+
+| object | shader (= which texture slot it reads) | vanilla baked `diff` |
+| --- | --- | --- |
+| `eye_globeShape` (6 verts) | `PdxMeshPortrait` -> `PortraitCharacter` (12) | `human_female_body_african_hazel_eyes.dds` |
+| `eye_pupilShape` (6) | `PdxMeshPortrait` | same |
+| `eye_specShape` (24) | `PdxMeshPortrait` | same |
+| `bodyShape` (76) | `PdxMeshPortrait` | same |
+| `headShape` (279) | `PdxMeshPortrait` | same |
+| `clothesShape` (51) | `PdxMeshPortraitClothes` -> `PortraitClothes` (13) | `human_female_clothes_ruler_02.dds` |
+| `hairShape` (12) | `PdxMeshPortraitHair` -> `PortraitHair` (14) | `new_human_female_hair_black_style_05.dds` |
+| `hair_02Shape` (24) | `PdxMeshPortraitHair` | same |
+
+and the definition adds three more sources:
+
+| field | file:line | entries | reaches |
+| --- | --- | --- | --- |
+| `character_textures` | `07_portraits_human.txt:23-27` | 5 (in this order: `latina_brown_eyes`, `latina_light_brown_eyes`, `latina_green_eyes`, `latina_blue_eyes`, `latina_hazel_eyes`) | `PortraitCharacter` (12) |
+| `clothes_selector = "new_human_female_clothes_01"` | `gfx/portraits/asset_selectors/new_human_female_clothes_01.txt` | 19 entries, 7 distinct `.dds` | `PortraitClothes` (13) |
+| `attachment_selector = "new_human_female_hair_01"` | `gfx/portraits/asset_selectors/new_human_female_01_hair.txt` (name != filename) | 212 entries, 26 distinct `.dds` | `PortraitHair` (14) |
+| `portrait_evolution` (not declared by this portrait; the global block) | `00_portraits_main.txt:332-338` | `mask` + `decal` | `CustomTexture2` (11), `PortraitEvolutionDecal` (15) |
+
+**38 distinct `.dds` paths are reachable from that one definition, and all 38 exist.** The five shader
+slots come from `gfx/FX/pdxmesh_samplers.fxh`: `DiffuseMap` Index 0 (:5-13), `SpecularMap` 1,
+`NormalMap` 2, `CustomTexture2` 11 (:106-114), `PortraitCharacter` 12 (:115-123),
+`PortraitClothes` 13 (:124-132), `PortraitHair` 14 (:133-141), `PortraitEvolutionDecal` 15
+(:142-150). `PixelPdxMeshPortrait` (`gfx/FX/pdxmesh.shader:1141-1232`) is where the branch lives:
+`#ifdef CLOTHES` -> `PortraitClothes`, `#else #ifdef HAIR` -> `PortraitHair`, `#else` ->
+`PortraitCharacter` **when `CustomDiffuseTexture > 0.5`**, otherwise `DiffuseMap`. That `else` is
+why an `exd1`-style portrait with no `character_textures` shows the `meshsettings` texture.
+
+### What a re-skin can and cannot change
+
+**Can:** every one of those five slots, per portrait; the **normal and specular maps** (only through
+`meshsettings texture_normal` / `texture_specular` - the portrait definition has no field for them);
+the **shader** of any object (`meshsettings shader`); the **clothes and hair sets** (by shipping a
+selector); the scale and the close-up framing; and which sound it greets you with. All of it additive
+- a mod's own `pdxmesh`/`entity`/portrait definition overrides no vanilla file.
+
+**Cannot:** the **geometry**. The polygon planes, their vertex counts, their UVs and the bone
+hierarchy are inside the binary `.mesh`, and nothing outside it can move a vertex. Cannot change the
+**animation** either: a `.anim` is per-joint `t`/`q`/`s` (`info { fps = 30.17, sa = 180, j = 29 }`),
+so a clip repositions bones and never touches a texel. Cannot add a **body part the mesh does not
+have** - a portrait with no `hairShape` cannot be given hair by a texture.
+
+### The UV consequence, stated practically
+
+The atlas is fixed and its layout is not the illustration's. For `human_01_female_portrait.mesh` the
+per-object UV ranges are:
+
+| object | U | V |
+| --- | --- | --- |
+| `eye_globeShape` | 0.104 - 0.303 | 0.110 - 0.202 |
+| `eye_pupilShape` | 0.138 - 0.305 | 0.199 - 0.247 |
+| `eye_specShape` | 0.736 - 0.888 | 0.256 - 0.269 |
+| `bodyShape` | 0.049 - 0.883 | 0.325 - 1.000 |
+| `headShape` | 0.525 - 0.927 | 0.065 - 0.465 |
+
+So the **face** occupies the right-hand half of V 0.065-0.465 of the SAME texture as the torso, the
+two **eye discs** (iris and pupil) are a small block at the LEFT edge (V 0.11-0.25), and the
+**eye highlight** is a thin strip at V 0.256-0.269. There is **no separate face/eye/mouth layer** -
+the mouth, eyelids, brows, cheeks and nose are *bones* (`mouth_main`, `upper_mouth`, `lower_mouth`,
+`left_lower_eyelid`, `left_eyebrow`, ... 58 joints per object) that deform the skin over the painted
+atlas. Three practical consequences:
+
+1. **You cannot repaint from scratch; you paint OVER the vanilla atlas.** The safest workflow is to
+   decode the vanilla `.dds`, paint on it, and keep every UV island where it is.
+2. **The face's expression is geometry, so the face must stay where the bones are.** Draw the new
+   features on top of the old ones; do not move an eye to a different island.
+3. **`V = 0` is the DDS's FIRST ROW - do not flip vertically when you convert your PNG to DDS.** The
+   `meshsettings` `texture_diffuse` name is a bare filename, and the engine also carries the mesh's
+   own baked `diff` as a bare filename, which is what makes this unflipped convention observable.
+
+## Evidence
+
+- **measured, the whole install, with a reader written for this round**: all **406** `.mesh` files under `gfx/models/portraits/**` parse to the EOF with the grammar in Syntax (0 unreadable), yielding **3,659** objects and **4,795** materials whose texture-bearing properties are `diff` (4,447), `n` (1,747) and `spec` (1,695), and **531** distinct `.dds` names. The five effects actually used are `PdxMeshPortrait` (3,864), `PdxMeshPortraitClothes` (794), `PdxMeshPortraitHair` (66), `PdxMeshPortraitAnimateUV` (46) and `PdxMeshAlphaAdditiveAnimateUV` (21); `PdxMeshShip` and `PdxMeshAlphaAdditive` appear twice each.
+- **measured**: `human_01_female_portrait.mesh` is 72,448 bytes and consumes exactly the 8 objects in the table above; its 5 `PdxMeshPortrait` materials all bake the SAME `diff` (`human_female_body_african_hazel_eyes.dds`), which is the single fact that kills the "one `character_textures` entry per material" reading.
+- **measured, the pool-not-slots proof**: over the 494 entity portraits whose entity and mesh resolve, the `character_textures` count equals the `PdxMeshPortrait` material count for only **47** of them. The two histograms are unrelated (`character_textures` 4 x112, 0 x82, 1 x82, 3 x71, 5 x64, ... 20 x2; materials 6 x49, 4 x41, 5 x41, 1 x40, 11 x37, ... 58 x1). `mam3` lists 9 entries against 4 materials and repeats `mammalian_slender_03_orange.dds` **three times**; `humanoid_hp_12` lists 20 = 4 palettes x 5 pattern variants. A per-slot list cannot repeat an entry.
+- **measured**: `human_female_01` reaches 38 distinct `.dds` (5 + 7 + 26), all present. Its two selectors resolve through files whose names differ from the selector name (`new_human_female_hair_01` -> `new_human_female_01_hair.txt`), so a name->file lookup by convention finds nothing.
+- **measured, the five shader slots**: `gfx/FX/pdxmesh_samplers.fxh` binds `DiffuseMap`=0, `SpecularMap`=1, `NormalMap`=2, `FlagMap`=3, ... `CustomTexture2`=11, `PortraitCharacter`=12, `PortraitClothes`=13, `PortraitHair`=14, `PortraitEvolutionDecal`=15 (152-line file). `gfx/FX/pdxmesh.shader:1141-1232` is `PixelPdxMeshPortrait` and is the whole slot-selection logic.
+- **measured, the UV layout**: the table of per-object U/V ranges above, computed from the `u0` float pairs in the mesh. It is also RENDERED, and the render is SHIPPED IN THIS REPOSITORY because it is the map a painter
+needs: `docs/portrait-atlas-human-female-uv.png` (133,924 bytes) draws each object's UV box on the
+decoded 420x512 atlas - the red and green boxes land exactly on the two painted eye discs and the
+magenta box exactly on the face, which is how the V axis was settled (the vertically flipped render
+puts them in empty space). A second copy lives outside the repo at
+`<clone>/unga-fix/portrait/human-female-atlas-uv.png`, referenced by the Chinese walkthrough
+`<clone>/unga-fix/3D-PORTRAIT-GUIDE.md`. Regenerate with `node uv-overlay.mjs` in
+`<clone>/_scratch/`.
+- **measured, the texture envelope of the new-human portraits**: `human_female_body_latina_brown_eyes.dds` is **420x512, uncompressed RGBA32, mipCount 1** - not the wiki's "512x512 DXT5". `new_human_female_hair_black_style_01.dds` is 300x360 RGBA32. The OLD human set is BC3 with alpha (`gfx/models/portraits/human/human_female_body_01.dds` 420x512 BC3 alpha=false, `human_female_iris.dds` 84x40 BC3 with 7 mips). So the format is a per-asset choice, not a rule.
+- **measured, `meshsettings` is vanilla's own re-skin mechanism, not a community trick**: `gfx/models/portraits/extradimensional/_extradimensional_portrait_meshes.gfx` declares `portrait_extradimensional_01_mesh`..`04_mesh` - **four** `pdxmesh` blocks - all with `file = "gfx/models/portraits/extradimensional/extradimensional_01_portrait.mesh"`, differing only in `meshsettings texture_diffuse` (11 objects each: `bodyShape`, `bodyHeartShape`, `bodySmokeShape`, `bodyTorsoShape`, `eye_Shape1..3`, `hairShape`, `headShape`, `left_armShape`, `right_armShape`). `aquatic_10_portrait.mesh` is used by two blocks the same way, one with `aquatic_10_portrait_beige.dds` on 9 objects and one with no overrides. The two extradimensional background meshes are each shared by four blocks with four different backgrounds.
+- **measured, `meshsettings` also changes the SHADER**: across `gfx/models/portraits/**`, 191 `meshsettings` blocks carry `texture_diffuse` (186), `shader` (174), `name` (160), `texture_normal` (128), `texture_specular` (128) and `index` (66). The `shader` values used are `PdxMeshPortrait` (77), `PdxMeshPortraitCustomDiffuseAnimateUV` (46), `PdxMeshAlphaAdditiveAnimateUV` (18), `PdxMeshPortraitAnimateUV` (17), `PdxMeshPortraitHair` (8), `PdxMeshPortraitClothes` (8). `index` is always `0`.
+- **measured, `meshsettings` AND the mesh chain, install-wide and false-positive-free**: **3,257** `pdxmesh` blocks exist, **all** of them in a `.gfx` (0 in any `.asset`), across **300** files, every one of those files under `gfx/models/`. Resolving all 496 entity portraits gives **495** whose `pdxmesh` is declared and whose `file` exists on disk, **0** undefined `pdxmesh`, **0** missing `.mesh`, and **1** (`swarm1small`) whose entity carries no `pdxmesh` at all - `_swarm_portrait_entities.asset:17-27` is `portrait_swarm_01_small_entity` with `attach = { root = portrait_swarm_01_entity }`. `locator_mesh` (which `mol5` walks to) is declared at `gfx/models/planets/_planetary_meshes.gfx:66` with `file = "gfx/models/locator.mesh"` - **three directories away from any portrait**, which is the measurement that says a mesh-name rule must index `gfx/**/*.gfx` and not `gfx/models/portraits/**`.
+- **measured, the `pdxasset` grammar and its token vocabulary**: `human_01_female_portrait.mesh` (72,448 B) and `human_01_female_portrait_idle1.anim` (74,562 B) both parse EXACTLY (`consumed == size`) with the Syntax-6 grammar; both headers are `@@b@!` + `\x08` + `pdxasset` + `i` + `02 00 00 00 01 00 00 00 00 00 00 00`. The `.anim` tree is `info { fps:f = 30.1675968170166, sa:i = 180, j:i = 29 }` plus one node per joint carrying `t:f(3)`, `q:f(4)`, `s:f(1)`. `stellaris.exe` @~40,840,300 carries the engine's own chunk/property token table verbatim: `mesh skin info object skeleton samples aabb p locator material u2 u3 u0 u1 tri t n ta ix pa q s sa j w fps spec shader tx diff lod loddist min max`, and the neighbouring error strings `Not a valid texture override: %s in file %s`, `Unknown texture type: %s in file %s`, `Duplicate texture '%s' found (current path '%s', previous path '%s')` and `Failed to find texture '%s'` (all from `pdxassetutil.cpp`).
+- **measured, the animation follows the mesh NODE NAMES**: `human_01_female_portrait_idle1.anim`'s joint nodes are `root spine chest right_shoulder ... left_eyebrow right_upper_eyelid left_cheek mouth_main upper_mouth lower_mouth ...` - the same names as the mesh's `skeleton` nodes. A `.mesh` and its `.anim` are paired by BONE NAME, so swapping a mesh under an existing animation only works if the bone names match.
+- **measured, an animation NAME may come from another directory**: of 1,313 `animation = { type = ... }` references that resolve against an `animation = { name = ... }` block, **32** are defined in a different directory from the `.gfx` that names them - e.g. `gfx/models/portraits/humanoid/_humanoid_portrait.gfx` uses `human_female_05_happy_animation`, defined in `gfx/models/portraits/human/_human_portrait_animations.asset`. So a mod's `pdxmesh` may reference a vanilla clip by name and ship no `.anim`.
+- **measured, a `pdxmesh`'s `file` need not live beside its `.gfx`**: of 3,257 `pdxmesh` blocks in `gfx/**`, **3,075** name a `.mesh` in the same directory and **182** do not - `gfx/models/combat_items/_ballistics_meshes.gfx` -> `gfx/models/ships/other/crystal_projectile.mesh`, `gfx/models/effects/cosmic_storms/GravityL.gfx` -> `gfx/models/effects/cosmic_storms/mesh/GravityL_mesh.mesh`.
+- **measured, `meshsettings` texture paths are BARE FILENAMES, everywhere**: of **12,297** `texture_*` values across **4,788** `meshsettings` blocks in **298** files, **0** contain a `/` and **0** contain a `\`. Resolution, measured over the 442 values under `gfx/models/portraits/**`: 434 exist in the `.mesh`'s own directory or an ancestor of it (`nospec.dds`/`nonormal.dds` resolve to `gfx/models/`, i.e. two levels up from `gfx/models/portraits/<culture>/`), and the remaining 8 exist only in a SIBLING directory (`human_female_clothes_general.dds` is referenced by a meshsettings on a mesh in `gfx/models/portraits/humanoid/` and lives in `gfx/models/portraits/human/`). So the search is wider than the mesh's own directory and its exact order is not established; a bare, unique filename is what vanilla relies on.
+- **measured, the schema of a portrait definition**: every field name used under `gfx/portraits/portraits/**` is `gender 747, trigger 742, portraits 694, add 655, character_textures 437, OR 381, NOT 258, decal 209, mask 209, ruler 195, custom_close_up_position_offset 193, custom_close_up_scale 193, greeting_sound 126, exists 117, entity 108, value 103, clothes_selector 91, attachment_selector 91, tied_texture 73, species 73, default 67, game_setup 66, pop 65, leader 64, variants 60, portrait_evolution 60, custom_mid_close_up_scale 39, custom_mid_close_up_position_offset 39, portrait_groups 35, custom_attachment_label 33, portrait_override 19, scale 9, city 6, min_pop 6, always 11, ...`. `tied_texture = { texture = "..." evolution_variants = { 0 } }` is a `character_textures` ENTRY FORM (73 uses), not a separate slot.
+- **vanilla, the evolution decal**: `gfx/portraits/portraits/00_portraits_main.txt:332-371` is the global `portrait_evolution` block - `default_mask_pair { mask = "gfx/models/portraits/common/default_portrait_evolution_mask.dds" decal = "..._decal.dds" }`, `mask_color = { 0 255 255 255 }`, and `evolution_stages { variants { { value = "_stage_1" trigger = { has_cybernetization_stage_1 = yes } } { value = "_stage_2" ... } { value = "_ascended" trigger = { has_become_psionic = yes } } } }`. A portrait may instead declare its own `portrait_evolution { variants { { value = { { decal = "..." mask = "..." } } trigger = {...} } } }` - `22_portraits_cybernetics.txt:29-59` does, per stage. `mask_color` is the sentinel `PixelPdxMeshPortrait` compares against (`MASK_COLOR = float4(0,1,1,1)`, `pdxmesh.shader:1160`).
+- **vanilla, the "Phenotype" index**: `interface/customize_species_editors.gui` has the `species_portrait_editor` window with sibling spinner containers `sub_portrait` (:1766-1828, label `LEADER_SUB_PORTRAIT` = "Phenotype", `localisation/english/main_3_l_english.yml:3264`), `clothes` (:1830-1891, label `CLOTHES`), `attachments` (:1893-1939, label `ATTACHMENTS`), `evolution_stage` (:2021-2082) and `evolution_variant` (:2084-2092). Those five spinners over the five per-portrait lists are the engine's own statement that a portrait's appearance is INDEXED, and the index maps onto `character_textures` for `sub_portrait`. This part is a reading of the element names and their labels, not an in-game measurement.
+- **web: the tool that authors a `.mesh`.** (1) Paradox's own **Clausewitz Maya Exporter**: distribution is **account-gated** - `https://accounts.paradoxplaza.com/profile/downloads`; the wiki page `https://stellaris.paradoxwikis.com/Maya_exporter` (last edited 19 May **2019**, tagged "timeless") says "Officially supported for Maya 2015/2016. Errors in use with earlier versions might occur", describes `PdxExporterInstall.exe` (run as administrator), a Maya plugin `pdx_exporter.mll` under `%USERPROFILE%\pdx_exporter\maya\maya_20xx_sdk_x64`, the MEL entry points `rehash; source pdx_export_ui.mel; showPdxExport;`, a settings file `%USERPROFILE%\Documents\Paradox Interactive\PdxExporter\settings\clausewitz.txt` with a `[Terra]` section pointing at the game root and `target_exe`, two Photoshop plugins (TextureExporter/GuiExporter) and a "Create .gfx and .asset" export option. It says nothing about Stellaris 4.x. (2) The community tool **`ross-g/io_pdx_mesh`** - "IO PDX MESH: This project aims to allow editing of mesh and animation files used in the various Clausewitz Engine games... designed to run in *both* Maya (2018+) and Blender (3.64+)", downloaded as `io_pdx_mesh.zip` from `https://github.com/ross-g/io_pdx_mesh/releases/latest` (release **0.91**, 2024-09-24, split into `blender-io_pdx_mesh.zip` and `maya-io_pdx_mesh.zip`, 235,195 bytes each, 7,311 + 614 downloads; `license.txt` is 35,146 bytes = GPL-3, and the readme credits a JetBrains PyCharm open-source licence). Its `clausewitz.json` carries a **`stellaris` material preset** listing `PdxMeshPortrait`, `PdxMeshPortraitClothes`, `PdxMeshPortraitHair`, `PdxMeshAlphaAdditiveAnimateUV` and 27 other Stellaris effects - i.e. the tool knows this game's portrait shaders. Its release notes and issue tracker name Stellaris portrait meshes explicitly: release **0.7** (2020-01-24) "lots of bugfixes for: **importing skeletal models (Stellaris portraits)**, tangent export for mirrored UVs, blendhsape compatible mesh export (Imperator portraits)"; release **0.8** "Exports without a mesh are now supported to allow for example **Stellaris ship frames** to be created"; issue **#4** (2019-11-14, closed) "Import Error on Older Stellaris Portraits - the newest lithoids portrait pack imports just fine, but all older portraits in the game give this error"; issue **#109** (2025-05-05, open) imports `\Stellaris\gfx\models\ui\biogenesis_frontend.mesh` then `.anim` in **Blender 4.4.3**, i.e. a 4.x-era file; issue **#116** (2025-10-03, open) `MMatrix: No matching constructor found when exporting a stellaris animation [Maya2022; io_pdx_mesh 0.9.1]`; issue **#49** (2021, open) Stellaris Star Eater animations import with duplicated bone names and jitter. Web evidence, NOT measured here - neither Blender nor Maya nor io_pdx_mesh is installed on this machine, and no `.mesh` was exported with either tool.
+- **web, and NOT found**: no Blender addon, Noesis plugin, assimp fork, ModelConverterX script, `pdxasset` converter, "stellaris mesh extractor" or Python/JS `.mesh` reader other than io_pdx_mesh surfaced in search. `ross-g/io_pdx_mesh` has public forks (`MahdiBaghbani/io_pdx_mesh`, `Buckzor/io_pdx_mesh`). The Stellaris wiki's `Modding` page lists "IO PDX Mesh - Blender (2.93+) & Maya (2018+) plugin for editing of mesh and animation files used in the various Clausewitz Engine games" as the community tool, with a different Blender floor than the readme's.
+- **web, the shipped "Animated ... Portraits" family, all by the same author (`silfae`)**: `Animated Portraits Redone - Astroraptor Portraits` (Steam workshop **3665532588**, 48.24 MB, published 2026-02-14, updated 2026-05-15) - "One set of fully animated portraits. **They twitch, and blink, and look around, and breathe, just like vanilla portraits.** The set comes with male and female variations, color variations, crest variations for males, partial and total synthetic evolution, psionic evolution, and clothing set. The base portrait is available for selection in the Reptilian class... Compatibility: Pretty much everything. **No vanilla files have been altered, and the additions are purely graphical.**" `Animated Serpentoid Portraits Redone` (**3692610801**, 35.88 MB, 2026-04-01) - same sentences plus "facial variations, headgear variations, cybernetic/psionic/Biogenetic Mutation Ascension". `Animated Xu'vua Portraits` (**3674327395**, 53.63 MB, 2026-03-02) - "...male and female variations, 2 body types, head/antennae variations, clothing variations for all of the above, cybernetic ascension-related variations (phase 1 and 2), a synthetic ascension separate set, 1 psionic ... biogenetic mutation ...". `Animated Kosmian Portraits` (**3703696447**, 139.89 MB, 2026-06-02). Read on `stellaris.smods.ru/archives/49171, 49445, 49300, 49837`, which mirror the Steam descriptions verbatim and link the Workshop pages; `steamcommunity.com` itself was not fetched this round. Their own author also publishes `corsairmarks/combined_silfae_revisited` on GitHub ("combines all of silfae's portrait mods that I've revisited").
+- **web, the wiki's animated-portrait page is stale in ways this topic can now name**: `https://stellaris.paradoxwikis.com/Portrait_modding` still carries the "last verified for version 3.3" banner (last edited 14 May 2025) and its worked example writes `hair_selector = "no_texture"` - a field the install rejects - and instructs the reader to add the portrait to `common/species_classes/00_species_classes.txt` under a `portraits` key, which the 4.4.6 parser refuses (both disproved in `portrait-formats-and-recipe`). It names `\gfx\portraits\portraits\00_portraits.txt` (that file does not exist; the real files are `00_portraits_main.txt`, `01_portraits_mammalian.txt`, ...), and it prescribes a 512x512 DXT5 diffuse, which the new-human atlases are not (420x512 RGBA32). Its mechanism sentence and its shader names ARE confirmed by the install: "Portraits in Stellaris are animated 2D characters. It works by having body parts split up on a texture map, assigning each body part to an individual polygonal plane, sorting them correctly in Maya and animating it using the skeleton feature."
+
+## Rules
+
+- **To make a portrait move, reuse a vanilla `.mesh`; do not try to animate a 2D portrait.** `portrait-formats-and-recipe` closes the 2D routes on screen and in the engine's own log. Motion is the `.mesh` pipeline, and the cheapest way into it is a mod-owned `pdxmesh` whose `file` is a VANILLA `.mesh`.
+- **A `pdxmesh`'s object textures and shader are overridable from text, by object name, with `meshsettings`.** `meshsettings = { name = "<object>Shape" index = 0 shader = "<effect>" texture_diffuse = "<dds>" texture_normal = "<dds>" texture_specular = "<dds>" }` inside the mod's own `pdxmesh` block. Vanilla ships four portraits over one `.mesh` this way; a mod needs no 3D tool for this route.
+- **An animation is referenced by NAME, not shipped.** `animation = { id = "idle" type = "<an animation name>" }` in the `pdxmesh` block, and the name may be defined in a vanilla `*_animations.asset` in another directory (32 vanilla cases). A mod that re-skins needs no `.anim`.
+- **A mesh and its animation are paired by BONE NAME.** A `.anim`'s joint nodes are the mesh's skeleton node names. Substituting a mesh under an existing clip works only where the names agree.
+- **`character_textures` is a POOL of whole-body alternatives, index-selected - not a list of slots.** Give it N complete atlases (skin/eye/pattern variants); the engine binds ONE to `PortraitCharacter` for every `PdxMeshPortrait*` material. Repeats are legal and weight nothing (they are positions in the list). To change the face, replace every entry or override the files.
+- **If a portrait declares no `character_textures`, the look comes from `meshsettings texture_diffuse`.** That is the `exd1`..`exd4` shape, and it is the cleanest way to give a portrait art that is nowhere in vanilla's texture set.
+- **Clothes and hair are SELECTORS, not textures.** `clothes_selector` / `attachment_selector` name a block in `gfx/portraits/asset_selectors/<anyfile>.txt` (the block's top-level key is the name; the FILE name is independent - `new_human_female_hair_01` is in `new_human_female_01_hair.txt`). A selector without a `default` logs "Missing default texture in texture selector" (`portraits.cpp`, exe `@39341900`). Write `attachment_selector`, never `hair_selector`.
+- **The face is not a layer and the eyes are not a sprite.** Body, head, both eye discs and the eye highlight share ONE atlas, and the mouth/eyelids/brows are BONES over it. Paint on top of the vanilla UV islands; do not relocate a face part.
+- **`V = 0` is the DDS's first row - convert PNG to DDS without a vertical flip.**
+- **`meshsettings` texture names are BARE FILENAMES** (12,297 of 12,297 in the install). The engine resolves them beyond the mesh's own directory (8 vanilla cases resolve in a sibling directory), so give your file a name that is unique; a full path has no vanilla precedent and its behaviour is unverified.
+- **A mesh declaration is `pdxmesh = { name = ... file = ... }` in a `.gfx`, and the name is GLOBAL.** Index all of `gfx/**/*.gfx`, not `gfx/models/portraits/**`: vanilla's `locator_mesh` is declared in `gfx/models/planets/_planetary_meshes.gfx` and a portrait walks to it.
+- **An entity may carry `attach = { root = <entity> }` instead of a `pdxmesh`.** `portrait_swarm_01_small_entity` does, and it is the one vanilla portrait that names no mesh of its own - a checker must skip it rather than report it.
+- **Authoring a new `.mesh` needs one of exactly two tools**: Paradox's account-gated Clausewitz Maya Exporter (Maya 2015/2016, `https://accounts.paradoxplaza.com/profile/downloads`) or `ross-g/io_pdx_mesh` (Blender 3.64+ / Maya 2018+, GPL, `https://github.com/ross-g/io_pdx_mesh/releases/latest`). Nothing else found on the web reads or writes the binary `pdxasset` mesh.
+- **A real new portrait mesh costs tens of megabytes of textures, not kilobytes.** The four shipped "Animated ... Portraits" sets are 35.88 / 48.24 / 53.63 / 139.89 MB and alter no vanilla file; that size is thousands of `.dds` plus `.mesh`/`.anim` per variant, which is the honest price of the (B) route and the reason (A) exists.
+- **The `.mesh` and `.anim` containers are readable, and the format is exactly the token table `stellaris.exe` carries.** See Syntax-7. A reader that parses it can report a mesh's object names, shader, texture references and skeleton without any 3D tool - which is what makes a "clone a vanilla portrait's file set with substitutions" scaffold possible (see 待确认).
+- **Re-skinning a vanilla mesh with your own art is fine; shipping a commercial game's illustrations is not.** The artwork's licence is the cost, not the mesh's. Nothing in this topic changes that.
+
+## Breaks
+
+- **"`character_textures` is a slot list, one entry per material."** It reads that way, and for `human_female_01` it is even numerically true (5 entries, 5 `PdxMeshPortrait` materials). It is wrong: across 494 portraits the two counts agree only 47 times, `mam3` has 9 entries against 4 materials, and `mam3` repeats one path three times - which no slot list can mean. The list is a POOL and the selection is an index.
+- **"An animated portrait needs Maya."** True for a NEW mesh (route B), false for a re-skin: `meshsettings` re-textures a meshed portrait from a `.gfx`, and vanilla does it on four of its own portraits. A modder who only wants their own art on a moving portrait needs a paint program.
+- **"`meshsettings` paths are relative to the root, like `character_textures`."** 0 of 12,297 are paths at all. They are bare filenames, and vanilla's own `nospec.dds` resolves two directories ABOVE the mesh.
+- **"The portrait's textures are the ones in the definition."** The mesh carries baked `diff` names for every material, and a portrait's own `character_textures` may be absent entirely (`exd1`, and 82 of the 494 resolvable portraits declare none). The mesh is the authority; the definition overrides it.
+- **"A face is a texture layer, so I can draw a new face."** The mouth, eyelids and brows are BONES. A new face drawn anywhere but on top of the old UV islands deforms into something that is not a face.
+- **"The wiki's workflow is close enough."** The animated-portrait page is 3.3-era: it uses the dead `hair_selector`, the dead `species_classes` `portraits` key, a `00_portraits.txt` that does not exist, and a 512x512 DXT5 diffuse that the new-human atlases are not. Only its mechanism sentence and its shader names survived contact with 4.4.6.
+- **"The `.mesh` is not readable, so only the exporter can touch it."** It is readable: there is a documented grammar (Syntax-7), 406 of 406 files parse exactly with it, and the engine ships the token table that names every chunk in the binary. The exporter remains the only way to WRITE one found so far, but reading is solved.
+- **"`.anim` moves the artwork, so a hand-edited clip could animate a re-skin differently."** A clip is `t`/`q`/`s` per joint. It cannot touch a texel. Any animation you want that a vanilla clip does not already have must come from a new rig, i.e. route (B).
+
+## 待确认
+
+- **Whether writing a `.mesh` works as well as reading one, with `io_pdx_mesh` and on this game version.** The tool's own issue tracker proves Stellaris portrait mesh IMPORT on 4.x-era files (issue #109, Blender 4.4.3, May 2025) and reports Stellaris mesh/animation EXPORT problems (issue #15 Maya 2020 materials/animations not detected; issue #116 Maya 2022 `MMatrix` on animation export; issue #49 duplicated bone names on a Star Eater clip; issue #25 Stellaris ship frames). No export was attempted here: **neither Blender nor Maya nor io_pdx_mesh is installed on this machine**, and this round was read-only research. A later round that installs Blender would settle it with one import/export round trip of a vanilla portrait mesh.
+- **Whether a `.mesh` written by io_pdx_mesh is accepted by 4.4.6 for a PORTRAIT specifically.** The changelog claims the feature; no shipped mod on this machine was checked against it, and the "Animated ... Portraits" sets could not be downloaded (their hosts are external, `steamcommunity.com` was not fetched this round, and the `modsbase.com` archives were not downloaded). The four sets' descriptions are quoted verbatim above; everything about their internals is inference from "fully animated", "male and female / colour / crest / clothing variations", and "no vanilla files have been altered".
+- **What the four "Animated ... Portraits" sets actually contain.** Not a single file of them was read - only their Skymods pages (which mirror Steam's descriptions, sizes and revision dates). `corsairmarks/combined_silfae_revisited` on GitHub is a promising route to the real file lists and was not fetched.
+- **Whether the `meshsettings` texture search order can be relied on.** 434 of 442 vanilla values resolve in the mesh's own directory or an ancestor and 8 only in a sibling directory, so the search is wider than "the mesh's directory" but its order is not established; the 8 are `human_female_clothes_general.dds`, `human_male_clothes_governor.dds`, `human_female_clothes_governor.dds` and `human_female_outfit_scientist.dds`, all referenced from meshes in `gfx/models/portraits/humanoid/` and living in `gfx/models/portraits/human/`. A mod's safest move is a unique filename; whether a root-relative path is accepted at all is untested (no vanilla example exists).
+- **Whether the "Phenotype" spinner is really the `character_textures` index.** The five sibling spinners and their labels are in the file (`sub_portrait`/`clothes`/`attachments`/`evolution_stage`/`evolution_variant`), and `character_textures` is the only per-portrait list with no trigger that needs an index; but the join is a reading of element names, and no in-game run this round changed the phenotype of a portrait to see which entry was drawn.
+- **Whether `index = 0` in a `meshsettings` block ever selects anything other than the object's first material.** Vanilla only ever writes `0` (66 uses), so the field's other values are unobserved, and the `name` and `index` fields could not be shown to be independent.
+- **What `texture_wpo` does** (`texture_wpo` occurs 79 times in `meshsettings` install-wide, `texture_details` 3 times, against `texture_diffuse` 4,524). `wpo` is presumably world-position-offset and `details` an extra layer; neither a portrait mesh nor the portrait shader was shown to read either.
+- **Whether a mod may declare a `pdxmesh` OUTSIDE `gfx/`** (e.g. `gfx/my_meshes.gfx` is inside; `data/my.gfx` is not a path the engine scans as far as this round measured). All 300 vanilla `.gfx` files that declare a mesh live under `gfx/models/`, and the rule's index covers `gfx/**` to be safe, but the engine's own scan root for `.gfx` was not measured.
+- **The `meshsettings` `shader` override's limits.** It is used 174 times with six effect names, and it can point an object at `PdxMeshPortraitCustomDiffuseAnimateUV`/`PdxMeshAlphaAdditiveAnimateUV` - effects that read `CustomTexture2`/flowmap samplers the portrait definition cannot fill. Which combinations render as intended is unverified.
+- **Whether a portrait's `character_textures` entry can be a `.png`.** Same open question `portrait-formats-and-recipe` carries for `texturefile`; every path this round resolved was a `.dds`.
+
+## What the plugin could do with this, and does not yet
+
+The format work above is enough to make the plugin useful for this route **without** implementing it, and
+the shapes are already proven in scratch: a reader for the `pdxasset` container parses **406 of 406**
+portrait `.mesh` files and the `.anim` clips to the exact byte, and a chain resolver walks
+`portrait -> entity -> pdxmesh -> .mesh -> material -> shader/texture` over the whole install in about
+0.7 s. What a tool built on it would have to parse:
+
+1. **The container** (Syntax-7): the 27-byte header, `'['*depth + name + NUL` nodes, and `0x21`-tagged
+   properties with the `i`/`f`/`d`/`s` payloads. Type `d` exists in the grammar but was never hit in a
+   portrait mesh; the `s` payload's length INCLUDES the NUL.
+2. **Per material**: `shader` and every texture-bearing property actually present (`diff`, `n`, `spec`,
+   `tx`), plus the `object` name the material sits under.
+3. **Per `.anim`**: `info { fps, sa, j }` and the joint NAMES (which is what says whether a clip can be
+   played on a given mesh).
+4. **Per portrait**, the resolved chain and which of the five slots each texture lands in - including
+   the `character_textures` POOL, the two selectors (resolved by searching every
+   `asset_selectors/*.txt` for the block, not by filename), and the global/per-portrait
+   `portrait_evolution`.
+
+A "re-skinned animated portrait scaffold" would then be: copy a vanilla portrait's five definition
+files, substitute the ids, emit a `pdxmesh` over the chosen vanilla `.mesh` with one `meshsettings`
+block per object naming `<yourname>.dds`, and write the portrait definition with no
+`character_textures` (the `exd1` shape). Every path in it is text. The one thing it could NOT emit is
+the art, and the one thing it could not promise is that a bare `texture_diffuse` filename resolves to
+the mod's own copy - which is the open question above.
