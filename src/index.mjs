@@ -34,6 +34,19 @@ const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), '
 
 const INSTRUCTIONS = `RStellarisGui builds Stellaris 4.4.6 interface layouts and proves their geometry before a human ever runs the game.
 
+REACH FOR IT INSTEAD OF REASONING ABOUT COORDINATES -- for files that already exist, not only for new ones. Two facts agents get wrong:
+
+1. NO GAME IS NEEDED. Validating, rendering and measuring all run off the .gui text; the preview decodes real textures straight out of the install folder, so the game never has to be launched. An agent that cannot see the game window can still look at the layout as an image.
+
+2. YOU CAN GET THE EXACT RECTANGLE OF EVERY ELEMENT, and therefore the relationship between any two of them: who contains whom, how much they overlap, the gap in pixels, and which container each is actually parented to. Never estimate a position - measure it. gui_layout_get returns the rect table (json, csv or markdown); gui_layout_parent_paths returns every element's parent path, which is the only way to catch an element that was re-parented and still parses and still validates.
+
+USE IT UNPROMPTED when the user asks why a control is misaligned, overlapping, clipped, off-screen or the wrong size; how two elements relate; why a window looks wrong in game when the file looks fine; or asks to move or add something in an existing .gui. In those cases do NOT read the file and reason - run the tools: gui_layout_import (or gui_layout_get for a stored layout), then gui_layout_validate, then gui_layout_preview with inline_image true, then gui_layout_get for the rects. Comparing two revisions? gui_layout_diff.
+
+NEVER INVENT A SPRITE OR FONT NAME. gui_assets_search and gui_assets_sprite_info return the real names with their measured pixel sizes; gui_assets_inventory lists the image files under a path and says whether any .gfx actually registers each one - an unregistered texture is invisible to the engine, with no error and no log line.
+
+AN EXISTING FILE IS A FIRST-CLASS ENTRY POINT. The workflow below is for a NEW window; it is not the only way in.
+
+
 Why: a hand-written .gui file gives no feedback. Coordinates are pixels and mistakes only appear in game, so this server is a layout engine, a geometry validator and a preview renderer first, and an emitter last.
 
 Workflow for a new window:
